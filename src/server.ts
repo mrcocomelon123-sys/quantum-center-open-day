@@ -17,7 +17,7 @@ async function loadStoredProjects(): Promise<Project[]> {
   }
   try {
     const fs = await import("node:fs/promises");
-    const raw = await fs.readFile("/tmp/quantum_projects_store.json", "utf-8");
+    const raw = await fs.readFile("/tmp/quantum_projects_store_v3.json", "utf-8");
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       memoryProjects = parsed;
@@ -34,7 +34,7 @@ async function persistStoredProjects(projects: Project[]): Promise<void> {
   memoryProjects = projects;
   try {
     const fs = await import("node:fs/promises");
-    await fs.writeFile("/tmp/quantum_projects_store.json", JSON.stringify(projects), "utf-8");
+    await fs.writeFile("/tmp/quantum_projects_store_v3.json", JSON.stringify(projects), "utf-8");
   } catch {
     // Ignore fs errors in environments without /tmp write access
   }

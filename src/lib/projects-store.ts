@@ -3,77 +3,31 @@ export interface Project {
   title: string;
   supervisor: string;
   description: string;
+  prerequisites?: string;
+  references?: string;
   imageUrl?: string;
+  pdfUrl?: string;
   createdAt: string;
 }
 
 export const INITIAL_PROJECTS: Project[] = [
   {
-    id: "proj-1",
-    title: "Unveiling the limitations of energy conversion in quantum systems",
-    supervisor: "Prof. David Gelbwaser (dgelbi@technion.ac.il)",
+    id: "proj-mpemba-1",
+    title: "Quantum Mpemba effect: why hot water can make ice faster than cold water",
+    supervisor: "Supervisor: David Gelbwaser (dgelbi@technion.ac.il)",
     description:
-      "Quantum energy conversion devices such as solar cells, photosynthetic systems, or molecular junctions exhibit a surprising effect known as the turnover effect: their power increases with the interaction strength with the energy source but drops to zero for very strong interactions.\n\nAs a consequence of the turnover effect, the performance of several non-equilibrium devices is limited by a bound on the electrical current, heat flow, power, or reaction rate. The potential technological applications of these devices call for devising strategies to prevent or minimize the consequences of the turnover effect.\n\nIn this project, we will develop numerical and/or analytical models to understand the turnover effect and identify strategies to mitigate it, thereby unleashing the full potential of these devices for multiple technological applications.",
-    imageUrl: "/sample-project.jpg",
-    createdAt: "2026-11-09T08:00:00.000Z",
-  },
-  {
-    id: "proj-2",
-    title: "Quantum Photonics & Entangled Light Sources on Chip",
-    supervisor: "Helen Diller Quantum Center Faculty",
-    description:
-      "Integrated quantum photonics enables the generation, manipulation, and detection of entangled photon pairs directly on silicon-nitride and lithium-niobate chips.\n\nIn this project, students will design and characterize nanoscale optical resonators and waveguide circuits for room-temperature quantum communication and photonic quantum computing.",
-    imageUrl: "",
-    createdAt: "2026-11-09T08:05:00.000Z",
-  },
-  {
-    id: "proj-3",
-    title: "Superconducting Qubits & Quantum Error Correction",
-    supervisor: "Quantum Computing Lab — Technion",
-    description:
-      "Fault-tolerant quantum computation requires suppressing decoherence and gate errors below the surface-code threshold.\n\nThis project explores novel superconducting circuit architectures, bosonic cat-qubits, and real-time syndrome decoding algorithms using microwave control pulses.",
-    imageUrl: "",
-    createdAt: "2026-11-09T08:10:00.000Z",
-  },
-  {
-    id: "proj-4",
-    title: "Quantum Sensing with Nitrogen-Vacancy Centers in Diamond",
-    supervisor: "Spin Physics & Nanomagnetometry Group",
-    description:
-      "Nitrogen-Vacancy (NV) centers in diamond act as atomic-scale quantum sensors capable of detecting magnetic and electric fields with nanoscale spatial resolution.\n\nStudents will work on optical spin initialization, dynamical decoupling sequences, and sensing biological or condensed-matter samples.",
-    imageUrl: "",
-    createdAt: "2026-11-09T08:15:00.000Z",
-  },
-  {
-    id: "proj-5",
-    title: "Ultracold Atoms & Quantum Simulation in Optical Lattices",
-    supervisor: "Atomic & Molecular Physics Lab",
-    description:
-      "By cooling atoms to nanokelvin temperatures and trapping them in laser-formed optical lattices, we simulate strongly correlated quantum many-body Hamiltonians.\n\nThe project involves quantum gas microscopy, topological band structures, and out-of-equilibrium quantum dynamics.",
-    imageUrl: "",
-    createdAt: "2026-11-09T08:20:00.000Z",
-  },
-  {
-    id: "proj-6",
-    title: "Quantum Algorithms & Variational Many-Body Solvers",
-    supervisor: "Quantum Information Theory Group",
-    description:
-      "Near-term intermediate-scale quantum (NISQ) processors offer new avenues for simulating quantum chemistry and optimization problems.\n\nIn this theoretical and computational project, we investigate barren-plateau mitigation, tensor-network preconditioning, and hybrid quantum-classical algorithms.",
-    imageUrl: "",
-    createdAt: "2026-11-09T08:25:00.000Z",
-  },
-  {
-    id: "proj-7",
-    title: "Topological Quantum Matter & 2D Van der Waals Heterostructures",
-    supervisor: "Quantum Materials & Condensed Matter Group",
-    description:
-      "Atomically thin 2D materials and twisted moiré superlattices host exotic emergent quantum phases including fractional Chern insulators and unconventional superconductivity.\n\nStudents will participate in device nanofabrication, cryogenic magneto-transport measurements, and scanning tunneling spectroscopy.",
-    imageUrl: "",
-    createdAt: "2026-11-09T08:30:00.000Z",
+      "It is generally expected that a hotter system will take longer to cool than a colder system. Nevertheless, this is not always true. Sometimes, a hotter system cools down faster than a cold system. This unusual phenomenon is known as the Mpemba effect, and it has been documented since the time of Aristotle, when people used hot water to melt ice more quickly than cold water.\n\nMoreover, the microscopic mechanisms underlying this unusual effect remain under debate. This project aims to study the Mpemba effect in quantum systems. Using a microscopic thermalization model, we will explore the conditions under which the Mpemba effect occurs and elucidate the underlying microscopic mechanism.\n\nDuring the project, the students will learn open quantum systems theory, the basic theoretical framework for describing thermalization processes, noise, and decoherence in quantum computers.",
+    references:
+      '• Mpemba, Erasto B., and Denis G. Osborne. "Cool?." Physics Education 4.3 (1969): 172-175.\n• Lu, Z., & Raz, O. (2017). Nonequilibrium thermodynamics of the Markovian Mpemba effect and its inverse. Proceedings of the National Academy of Sciences, 114(20), 5083-5088.\n• Avitan, Ido, Roee Factor, and David Gelbwaser-Klimovsky. "Necessary conditions for the Markovian Mpemba effect." arXiv:2603.04567 (2026).',
+    prerequisites:
+      "Basic programming skills in any language (python, mathematica, matlab, etc) and basic quantum mechanics",
+    imageUrl: "/mpemba-project.png",
+    pdfUrl: "/quantum-mpemba-effect.pdf",
+    createdAt: "2026-11-09T18:55:00.000Z",
   },
 ];
 
-const STORAGE_KEY = "quantum_center_projects_v2";
+const STORAGE_KEY = "quantum_center_projects_v3";
 const CHANNEL_NAME = "quantum_projects_sync";
 
 export function getProjects(): Project[] {

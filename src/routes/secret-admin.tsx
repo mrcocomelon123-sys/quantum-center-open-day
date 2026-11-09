@@ -25,10 +25,10 @@ import {
   LogOut,
   ExternalLink,
   Download,
-  KeyRound,
   Eye,
   EyeOff,
   X,
+  FileText,
 } from "lucide-react";
 
 const ADMIN_PASSWORD = "quantum2026";
@@ -57,10 +57,14 @@ function SecretAdminPage() {
   const [title, setTitle] = useState("");
   const [supervisor, setSupervisor] = useState("");
   const [description, setDescription] = useState("");
+  const [references, setReferences] = useState("");
+  const [prerequisites, setPrerequisites] = useState("");
   const [imagePreview, setImagePreview] = useState("");
   const [imageUrlInput, setImageUrlInput] = useState("");
+  const [pdfUrl, setPdfUrl] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -111,6 +115,36 @@ function SecretAdminPage() {
     reader.readAsDataURL(file);
   };
 
+  const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      alert("נא לבחור קובץ PDF תקין");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setPdfUrl(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const resetForm = () => {
+    setTitle("");
+    setSupervisor("");
+    setDescription("");
+    setReferences("");
+    setPrerequisites("");
+    setImagePreview("");
+    setImageUrlInput("");
+    setPdfUrl("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (pdfInputRef.current) pdfInputRef.current.value = "";
+  };
+
   const handleSaveProject = (e: FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !description.trim()) {
@@ -125,7 +159,10 @@ function SecretAdminPage() {
         title: title.trim(),
         supervisor: supervisor.trim(),
         description: description.trim(),
+        references: references.trim() || undefined,
+        prerequisites: prerequisites.trim() || undefined,
         imageUrl: finalImage,
+        pdfUrl: pdfUrl.trim() || undefined,
       });
       setStatusMsg("הפרויקט עודכן בהצלחה!");
       setEditingId(null);
@@ -134,18 +171,15 @@ function SecretAdminPage() {
         title: title.trim(),
         supervisor: supervisor.trim(),
         description: description.trim(),
+        references: references.trim() || undefined,
+        prerequisites: prerequisites.trim() || undefined,
         imageUrl: finalImage,
+        pdfUrl: pdfUrl.trim() || undefined,
       });
       setStatusMsg("הפרויקט נוסף בהצלחה למערכת!");
     }
 
-    // Reset form
-    setTitle("");
-    setSupervisor("");
-    setDescription("");
-    setImagePreview("");
-    setImageUrlInput("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    resetForm();
     setProjects(getProjects());
 
     setTimeout(() => setStatusMsg(""), 4000);
@@ -156,19 +190,17 @@ function SecretAdminPage() {
     setTitle(proj.title);
     setSupervisor(proj.supervisor);
     setDescription(proj.description);
+    setReferences(proj.references || "");
+    setPrerequisites(proj.prerequisites || "");
     setImagePreview(proj.imageUrl || "");
     setImageUrlInput("");
+    setPdfUrl(proj.pdfUrl || "");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
-    setTitle("");
-    setSupervisor("");
-    setDescription("");
-    setImagePreview("");
-    setImageUrlInput("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    resetForm();
   };
 
   const handleDelete = (id: string, projTitle: string) => {
@@ -179,17 +211,21 @@ function SecretAdminPage() {
   };
 
   const handleExportJSON = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projects, null, 2));
+    const dataStr =
+      "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projects, null, 2));
     const downloadAnchor = document.createElement("a");
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `quantum-projects-${new Date().toISOString().slice(0, 10)}.json`);
+    downloadAnchor.setAttribute(
+      "download",
+      `quantum-projects-${new Date().toISOString().slice(0, 10)}.json`
+    );
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
   };
 
   const handleResetDefaults = () => {
-    if (confirm("האם לאפס את רשימת הפרויקטים לפרויקט ברירת המחדל לדוגמה?")) {
+    if (confirm("האם לאפס את רשימת הפרויקטים לפרויקט ברירת המחדל?")) {
       saveProjects(INITIAL_PROJECTS);
       setProjects(INITIAL_PROJECTS);
     }
@@ -330,7 +366,7 @@ function SecretAdminPage() {
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="לדוגמה: Unveiling the limitations of energy conversion in quantum systems"
+                    placeholder="לדוגמה: Quantum Mpemba effect: why hot water can make ice faster than cold water"
                     className="w-full rounded-xl border border-white/15 bg-black/50 px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                     required
                   />
@@ -359,36 +395,65 @@ function SecretAdminPage() {
                     rows={6}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="תיאור מלא של הפרויקט, מטרות המחקר, שאלות מדעיות ודרישות..."
+                    placeholder="תיאור מלא של הפרויקט, מטרות המחקר ושאלות מדעיות..."
                     className="w-full rounded-xl border border-white/15 bg-black/50 p-4 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 leading-relaxed"
                     required
                   />
                 </div>
 
+                {/* References & Prerequisites (Optional) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-200 mb-1.5">
+                      מקורות / מאמרים (References — אופציונלי)
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={references}
+                      onChange={(e) => setReferences(e.target.value)}
+                      placeholder="• Mpemba, Erasto B. (1969)...&#10;• Lu, Z., & Raz, O. (2017)..."
+                      className="w-full rounded-xl border border-white/15 bg-black/50 p-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 leading-relaxed"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-200 mb-1.5">
+                      דרישות קדם (Prerequisites — אופציונלי)
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={prerequisites}
+                      onChange={(e) => setPrerequisites(e.target.value)}
+                      placeholder="לדוגמה: Basic programming skills in any language (python, mathematica, matlab, etc) and basic quantum mechanics"
+                      className="w-full rounded-xl border border-white/15 bg-black/50 p-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 leading-relaxed"
+                    />
+                  </div>
+                </div>
+
                 {/* Image Upload Area */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-200 mb-1.5">
-                    תמונה לפרויקט (גרפים / דיאגרמה / פוסטר)
+                    תמונה / גרף לפרויקט (ורצוי גם קובץ PDF מקורי אם קיים)
                   </label>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {/* File upload */}
-                    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/20 bg-black/30 p-5 hover:border-cyan-500/50 transition-colors">
-                      <Upload className="h-8 w-8 text-cyan-400 mb-2" />
-                      <span className="text-xs font-semibold text-slate-200">העלה קובץ תמונה מהמכשיר</span>
+                    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/20 bg-black/30 p-4 hover:border-cyan-500/50 transition-colors">
+                      <Upload className="h-7 w-7 text-cyan-400 mb-1.5" />
+                      <span className="text-xs font-semibold text-slate-200">העלה תמונה מהמכשיר</span>
                       <span className="text-[11px] text-slate-500 mt-0.5">PNG, JPG, WEBP</span>
                       <input
                         ref={fileInputRef}
                         type="file"
                         accept="image/*"
                         onChange={handleImageFileChange}
-                        className="mt-3 text-xs text-slate-400 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 file:cursor-pointer"
+                        className="mt-2.5 w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 file:cursor-pointer"
                       />
                     </div>
 
                     {/* Image URL input */}
-                    <div className="flex flex-col justify-center rounded-xl border border-white/15 bg-black/30 p-5">
-                      <span className="text-xs font-semibold text-slate-200 mb-1">או הזן קישור ישיר לתמונה (URL):</span>
+                    <div className="flex flex-col justify-center rounded-xl border border-white/15 bg-black/30 p-4">
+                      <span className="text-xs font-semibold text-slate-200 mb-1">או קישור לתמונה (URL):</span>
                       <input
                         type="url"
                         value={imageUrlInput}
@@ -396,8 +461,22 @@ function SecretAdminPage() {
                           setImageUrlInput(e.target.value);
                           if (e.target.value) setImagePreview(e.target.value);
                         }}
-                        placeholder="https://example.com/image.jpg"
+                        placeholder="https://example.com/image.png"
                         className="mt-2 w-full rounded-lg border border-white/15 bg-black/50 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Optional PDF upload */}
+                    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/20 bg-black/30 p-4 hover:border-cyan-500/50 transition-colors">
+                      <FileText className="h-7 w-7 text-cyan-400 mb-1.5" />
+                      <span className="text-xs font-semibold text-slate-200">צרף קובץ PDF (אופציונלי)</span>
+                      <span className="text-[11px] text-slate-500 mt-0.5">לצפייה במסמך המקורי</span>
+                      <input
+                        ref={pdfInputRef}
+                        type="file"
+                        accept="application/pdf"
+                        onChange={handlePdfFileChange}
+                        className="mt-2.5 w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-700 file:text-white hover:file:bg-slate-600 file:cursor-pointer"
                       />
                     </div>
                   </div>
@@ -421,11 +500,13 @@ function SecretAdminPage() {
                           הסר תמונה
                         </button>
                       </div>
-                      <img
-                        src={imagePreview}
-                        alt="Preview"
-                        className="max-h-60 w-auto rounded-lg object-contain mx-auto"
-                      />
+                      <div className="rounded-lg bg-white p-2">
+                        <img
+                          src={imagePreview}
+                          alt="Preview"
+                          className="max-h-60 w-auto rounded object-contain mx-auto"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -434,7 +515,7 @@ function SecretAdminPage() {
                 <div className="pt-2 flex items-center gap-3">
                   <button
                     type="submit"
-                    className="rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3 px-6 shadow-lg shadow-cyan-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center gap-2"
+                    className="rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3 px-6 shadow-lg shadow-cyan-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center gap-2 cursor-pointer"
                   >
                     <PlusCircle className="h-5 w-5" />
                     <span>{editingId ? "שמור שינויים בפרויקט" : "העלה פרויקט חדש לאתר"}</span>
@@ -443,7 +524,7 @@ function SecretAdminPage() {
                     <button
                       type="button"
                       onClick={handleCancelEdit}
-                      className="rounded-xl border border-white/20 bg-white/5 py-3 px-5 text-sm font-semibold text-slate-300 hover:bg-white/10 transition-colors"
+                      className="rounded-xl border border-white/20 bg-white/5 py-3 px-5 text-sm font-semibold text-slate-300 hover:bg-white/10 transition-colors cursor-pointer"
                     >
                       ביטול
                     </button>
@@ -462,7 +543,7 @@ function SecretAdminPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleExportJSON}
-                    className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 transition-colors"
+                    className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 transition-colors cursor-pointer"
                     title="הורד קובץ JSON של כל הפרויקטים לגיבוי"
                   >
                     <Download className="h-3.5 w-3.5 text-cyan-400" />
@@ -472,7 +553,7 @@ function SecretAdminPage() {
                     onClick={handleResetDefaults}
                     className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                   >
-                    איפוס לדוגמאות
+                    איפוס לברירת מחדל
                   </button>
                   <button
                     onClick={() => {
@@ -504,10 +585,10 @@ function SecretAdminPage() {
                           <img
                             src={proj.imageUrl}
                             alt=""
-                            className="h-20 w-28 rounded-lg object-cover ring-1 ring-white/10 shrink-0 bg-black"
+                            className="h-20 w-24 rounded-lg object-contain ring-1 ring-white/10 shrink-0 bg-white p-1"
                           />
                         ) : (
-                          <div className="h-20 w-28 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
+                          <div className="h-20 w-24 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
                             <ImageIcon className="h-6 w-6" />
                           </div>
                         )}
@@ -529,14 +610,14 @@ function SecretAdminPage() {
                       <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
                         <button
                           onClick={() => handleStartEdit(proj)}
-                          className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                          className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
                         >
                           <Edit2 className="h-3.5 w-3.5 text-cyan-400" />
                           <span>ערוך</span>
                         </button>
                         <button
                           onClick={() => handleDelete(proj.id, proj.title)}
-                          className="flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/20 transition-colors"
+                          className="flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           <span>מחק</span>

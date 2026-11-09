@@ -13,6 +13,9 @@ import {
   ChevronRight,
   Image as ImageIcon,
   ArrowUpRight,
+  FileText,
+  GraduationCap,
+  Library,
 } from "lucide-react";
 
 export const Route = createFileRoute("/projects")({
@@ -89,7 +92,9 @@ function ProjectsPage() {
     return (
       p.title.toLowerCase().includes(q) ||
       p.supervisor.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q)
+      p.description.toLowerCase().includes(q) ||
+      (p.prerequisites && p.prerequisites.toLowerCase().includes(q)) ||
+      (p.references && p.references.toLowerCase().includes(q))
     );
   });
 
@@ -121,7 +126,7 @@ function ProjectsPage() {
                   Research Projects
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm sm:text-base text-slate-400">
-                  Undergraduate projects, MSc and PhD research opportunities. Click on any project card below to read the full details and diagrams.
+                  Undergraduate projects, MSc and PhD research opportunities. Click on any project card below to read the full details, references, prerequisites, and figures.
                 </p>
               </div>
 
@@ -136,7 +141,7 @@ function ProjectsPage() {
                       setSearchQuery(e.target.value);
                       setCurrentPage(1);
                     }}
-                    placeholder="חפש פרויקט או מנחה..."
+                    placeholder="Search projects or supervisors..."
                     className="w-full rounded-xl border border-white/15 bg-black/50 ps-10 pe-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                   />
                 </div>
@@ -160,15 +165,15 @@ function ProjectsPage() {
                     setSearchQuery("");
                     setCurrentPage(1);
                   }}
-                  className="ms-2 text-xs text-cyan-400 hover:underline"
+                  className="ms-2 text-xs text-cyan-400 hover:underline cursor-pointer"
                 >
-                  נקה חיפוש
+                  Clear search
                 </button>
               )}
             </div>
 
             <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>תצוגה בעמוד:</span>
+              <span>Per page:</span>
               <div className="inline-flex rounded-lg border border-white/15 bg-slate-900/80 p-0.5">
                 <button
                   type="button"
@@ -182,7 +187,7 @@ function ProjectsPage() {
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  6 ריבועים
+                  6 Cards
                 </button>
                 <button
                   type="button"
@@ -196,7 +201,7 @@ function ProjectsPage() {
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  9 ריבועים
+                  9 Cards
                 </button>
               </div>
             </div>
@@ -206,10 +211,10 @@ function ProjectsPage() {
             <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-12 text-center text-slate-400">
               <BookOpen className="h-12 w-12 mx-auto text-slate-600 mb-3" />
               <p className="text-base font-semibold text-slate-300">
-                לא נמצאו פרויקטים התואמים לחיפוש.
+                No matching projects found.
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                נסה מונח חיפוש אחר או בדוק שוב מאוחר יותר.
+                Try another search term or check back soon.
               </p>
             </div>
           ) : (
@@ -256,16 +261,24 @@ function ProjectsPage() {
                     {/* Card Bottom Bar */}
                     <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-xs">
                       <span className="inline-flex items-center gap-1 font-semibold text-cyan-400 group-hover:text-cyan-300">
-                        <span>לפתיחת כל הפרטים</span>
+                        <span>View full details</span>
                         <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                       </span>
 
-                      {proj.imageUrl && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-slate-300 border border-white/10">
-                          <ImageIcon className="h-3 w-3 text-cyan-400" />
-                          <span>כולל תמונה</span>
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {proj.imageUrl && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-slate-300 border border-white/10">
+                            <ImageIcon className="h-3 w-3 text-cyan-400" />
+                            <span>Figure</span>
+                          </span>
+                        )}
+                        {proj.pdfUrl && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-300 border border-cyan-500/20">
+                            <FileText className="h-3 w-3 text-cyan-400" />
+                            <span>PDF</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -281,7 +294,7 @@ function ProjectsPage() {
                     className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-slate-900/80 px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
                   >
                     <ChevronLeft className="h-4 w-4" />
-                    <span>הקודם</span>
+                    <span>Previous</span>
                   </button>
 
                   <div className="flex items-center gap-1.5 px-1">
@@ -307,7 +320,7 @@ function ProjectsPage() {
                     disabled={safeCurrentPage === totalPages}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-slate-900/80 px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
                   >
-                    <span>הבא</span>
+                    <span>Next</span>
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -321,14 +334,14 @@ function ProjectsPage() {
       {selectedProject && (
         <div
           onClick={() => setSelectedProject(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 sm:p-6 backdrop-blur-md animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-3 sm:p-6 backdrop-blur-md animate-in fade-in"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-slate-950 shadow-2xl"
+            className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-slate-950 shadow-2xl"
           >
             {/* Modal Header */}
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-slate-900/80 px-6 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-slate-900/90 px-6 py-4">
               <div className="min-w-0 flex-1">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400">
                   Research Project Details
@@ -349,26 +362,87 @@ function ProjectsPage() {
 
             {/* Modal Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {selectedProject.supervisor && (
-                <div className="inline-flex items-center gap-2 rounded-xl bg-cyan-950/70 border border-cyan-800/50 px-4 py-2 text-sm font-semibold text-cyan-300">
-                  <UserCheck className="h-4 w-4 text-cyan-400 shrink-0" />
-                  <span>{selectedProject.supervisor}</span>
-                </div>
-              )}
+              {/* Top Info Bar: Supervisor & Optional PDF Link */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {selectedProject.supervisor && (
+                  <div className="inline-flex items-center gap-2 rounded-xl bg-cyan-950/70 border border-cyan-800/50 px-4 py-2 text-sm font-semibold text-cyan-300">
+                    <UserCheck className="h-4 w-4 text-cyan-400 shrink-0" />
+                    <span>{selectedProject.supervisor}</span>
+                  </div>
+                )}
 
-              <div className="text-sm sm:text-base text-slate-200 leading-relaxed whitespace-pre-line">
-                {selectedProject.description}
+                {selectedProject.pdfUrl && (
+                  <a
+                    href={selectedProject.pdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 px-4 py-2 text-xs sm:text-sm font-semibold text-cyan-300 transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-cyan-400" />
+                    <span>Open Original PDF</span>
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </a>
+                )}
               </div>
 
-              {selectedProject.imageUrl && (
-                <div className="rounded-xl border border-white/15 bg-black/60 p-3 shadow-inner">
-                  <img
-                    src={selectedProject.imageUrl}
-                    alt={selectedProject.title}
-                    className="mx-auto max-h-[520px] w-auto max-w-full rounded-lg object-contain"
-                  />
+              {/* Main Content Grid: Text + References on Left, Figure on Right (if image exists) */}
+              <div
+                className={
+                  selectedProject.imageUrl
+                    ? "grid grid-cols-1 md:grid-cols-12 gap-6 items-start"
+                    : "space-y-6"
+                }
+              >
+                <div
+                  className={
+                    selectedProject.imageUrl ? "md:col-span-7 space-y-5" : "space-y-5"
+                  }
+                >
+                  {/* Full Description */}
+                  <div className="text-sm sm:text-base text-slate-200 leading-relaxed whitespace-pre-line">
+                    {selectedProject.description}
+                  </div>
+
+                  {/* References Section */}
+                  {selectedProject.references && (
+                    <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4 space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-400">
+                        <Library className="h-4 w-4" />
+                        <span>References</span>
+                      </div>
+                      <div className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                        {selectedProject.references}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Prerequisites Section */}
+                  {selectedProject.prerequisites && (
+                    <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4 space-y-1.5">
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-300">
+                        <GraduationCap className="h-4 w-4" />
+                        <span>Prerequisites</span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-200 italic leading-relaxed">
+                        {selectedProject.prerequisites}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              )}
+
+                {/* Right Column: Scientific Figure / Image */}
+                {selectedProject.imageUrl && (
+                  <div className="md:col-span-5 flex flex-col items-center">
+                    <div className="w-full rounded-xl border border-white/20 bg-white p-3 shadow-xl">
+                      <img
+                        src={selectedProject.imageUrl}
+                        alt={selectedProject.title}
+                        className="mx-auto max-h-[520px] w-auto max-w-full rounded-lg object-contain"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Modal Footer */}
@@ -378,7 +452,7 @@ function ProjectsPage() {
                 onClick={() => setSelectedProject(null)}
                 className="rounded-xl bg-cyan-600 hover:bg-cyan-500 px-5 py-2 text-xs sm:text-sm font-bold text-white transition-colors cursor-pointer"
               >
-                סגור חלון
+                Close
               </button>
             </div>
           </div>
