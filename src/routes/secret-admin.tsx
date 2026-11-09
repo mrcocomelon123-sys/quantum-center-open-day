@@ -5,12 +5,15 @@ import { SiteFooter } from "@/components/SiteFooter";
 import logoImg from "@/assets/logo.png";
 import {
   getProjects,
-  fetchServerProjects,
+  getPendingProjects,
+  fetchServerState,
   addProject,
   deleteProject,
   updateProject,
   saveProjects,
   clearAllProjects,
+  approvePendingProject,
+  rejectPendingProject,
   INITIAL_PROJECTS,
   type Project,
 } from "@/lib/projects-store";
@@ -29,6 +32,9 @@ import {
   EyeOff,
   X,
   FileText,
+  Clock,
+  Check,
+  XCircle,
 } from "lucide-react";
 
 const ADMIN_PASSWORD = "quantum2026";
@@ -51,6 +57,7 @@ function SecretAdminPage() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [pendingProjects, setPendingProjects] = useState<Project[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Form states
@@ -66,16 +73,45 @@ function SecretAdminPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
+  const refreshAll = () => {
+    setProjects(getProjects());
+    setPendingProjects(getPendingProjects());
+  };
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem(AUTH_KEY);
       if (stored === "authenticated") {
         setIsAuthenticated(true);
       }
-      setProjects(getProjects());
-      void fetchServerProjects().then((serverList) => {
-        if (serverList) setProjects(serverList);
+      refreshAll();
+      void fetchServerState().then((state) => {
+        if (state) {
+          setProjects(state.projects);
+          setPendingProjects(state.pendingProjects);
+        }
       });
+
+      const handleUpdate = () => {
+        refreshAll();
+      };
+
+      window.addEventListener("projects-updated", handleUpdate);
+      window.addEventListener("storage", handleUpdate);
+
+      let bc: BroadcastChannel | null = null;
+      if ("BroadcastChannel" in window) {
+        bc = new BroadcastChannel("quantum_projects_sync");
+        bc.onmessage = () => {
+          refreshAll();
+        };
+      }
+
+      return () => {
+        window.removeEventListener("projects-updated", handleUpdate);
+        window.removeEventListener("storage", handleUpdate);
+        if (bc) bc.close();
+      };
     }
   }, []);
 
@@ -85,7 +121,7 @@ function SecretAdminPage() {
       sessionStorage.setItem(AUTH_KEY, "authenticated");
       setIsAuthenticated(true);
       setErrorMsg("");
-      setProjects(getProjects());
+      refreshAll();
     } else {
       setErrorMsg("סיסמה שגויה. נסה שוב.");
     }
@@ -180,9 +216,27 @@ function SecretAdminPage() {
     }
 
     resetForm();
-    setProjects(getProjects());
+    refreshAll();
 
     setTimeout(() => setStatusMsg(""), 4000);
+  };
+
+  const handleApprovePending = (id: string) => {
+    const approved = approvePendingProject(id);
+    if (approved) {
+      refreshAll();
+      setStatusMsg(`הפרויקט "${approved.title}" אושר והועלה מיד ל-Available Projects!`);
+      setTimeout(() => setStatusMsg(""), 4500);
+    }
+  };
+
+  const handleRejectPending = (id: string, projTitle: string) => {
+    if (confirm(`האם לדחות ולמחוק את בקשת הפרויקט "${projTitle}"?`)) {
+      rejectPendingProject(id);
+      refreshAll();
+      setStatusMsg("בקשת הפרויקט נדחתה והוסרה.");
+      setTimeout(() => setStatusMsg(""), 3500);
+    }
   };
 
   const handleStartEdit = (proj: Project) => {
@@ -206,7 +260,7 @@ function SecretAdminPage() {
   const handleDelete = (id: string, projTitle: string) => {
     if (confirm(`האם אתה בטוח שברצונך למחוק את הפרויקט "${projTitle}"?`)) {
       deleteProject(id);
-      setProjects(getProjects());
+      refreshAll();
     }
   };
 
@@ -225,9 +279,9 @@ function SecretAdminPage() {
   };
 
   const handleResetDefaults = () => {
-    if (confirm("האם לאפס את רשימת הפרויקטים לפרויקט ברירת המחדל?")) {
+    if (confirm("האם לאפס את רשימת הפרויקטים ל-4 הפרויקטים האמיתיים ההתחלתיים?")) {
       saveProjects(INITIAL_PROJECTS);
-      setProjects(INITIAL_PROJECTS);
+      refreshAll();
     }
   };
 
@@ -235,7 +289,7 @@ function SecretAdminPage() {
     <div className="flex min-h-screen flex-col bg-[#030712] text-slate-100 selection:bg-cyan-500/30">
       <SiteHeader />
 
-      <main className="flex-1 py-10 px-4 sm:px-6 max-w-5xl mx-auto w-full">
+      <main className="flex-1 py-10 px-4 sm:px-6 max-w-5xl mx-auto w-full" dir="rtl">
         {!isAuthenticated ? (
           /* Password Gateway Card */
           <div className="mx-auto mt-12 max-w-md rounded-2xl border border-white/10 bg-slate-900/90 p-8 shadow-2xl backdrop-blur-xl">
@@ -246,7 +300,7 @@ function SecretAdminPage() {
               <img src={logoImg} alt="Logo" className="mt-4 h-9 w-auto object-contain" />
               <h1 className="mt-4 text-2xl font-bold tracking-tight text-white">כניסת מנהל פרויקטים</h1>
               <p className="mt-2 text-sm text-slate-400">
-                הכנס סיסמה כדי להעלות או לערוך פרויקטים שיוצגו באתר
+                הכנס סיסמה כדי לאשר פרויקטים ממתינים או להעלות ולערוך פרויקטים באתר
               </p>
             </div>
 
@@ -282,7 +336,7 @@ function SecretAdminPage() {
 
               <button
                 type="submit"
-                className="w-full rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 shadow-lg shadow-cyan-600/30 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                className="w-full rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 shadow-lg shadow-cyan-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
               >
                 התחבר למערכת
               </button>
@@ -290,7 +344,7 @@ function SecretAdminPage() {
 
             <div className="mt-6 border-t border-white/10 pt-4 text-center">
               <span className="text-xs text-slate-500">
-                סיסמת ברירת מחדל: <code className="text-cyan-400 font-mono">quantum2026</code>
+                סיסמת ברירת מחדל: <code className="text-cyan-400 font-mono" dir="ltr">quantum2026</code>
               </span>
             </div>
           </div>
@@ -304,10 +358,10 @@ function SecretAdminPage() {
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/30">
                     <CheckCircle2 className="h-3.5 w-3.5" /> מחובר כמנהל
                   </span>
-                  <span className="text-xs text-slate-400 font-mono">Admin Panel</span>
+                  <span className="text-xs text-slate-400 font-mono" dir="ltr">Admin Panel</span>
                 </div>
                 <h1 className="mt-2 text-2xl sm:text-3xl font-extrabold text-white">
-                  ניהול פרויקטי מחקר — Open Day
+                  ניהול ואישור פרויקטי מחקר — Open Day
                 </h1>
               </div>
 
@@ -318,11 +372,11 @@ function SecretAdminPage() {
                   className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
                 >
                   <ExternalLink className="h-3.5 w-3.5 text-cyan-400" />
-                  <span>צפה בעמוד Projects באתר</span>
+                  <span>צפה ב-Available Projects</span>
                 </Link>
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3.5 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/20 transition-colors"
+                  className="flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3.5 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   <span>התנתק</span>
@@ -337,19 +391,103 @@ function SecretAdminPage() {
               </div>
             )}
 
-            {/* Project Upload / Edit Form */}
+            {/* 1. PENDING SUBMISSIONS SECTION (Awaiting Admin Approval) */}
+            <div className="rounded-2xl border-2 border-amber-500/30 bg-gradient-to-b from-amber-950/20 to-slate-900/80 p-6 sm:p-8 shadow-xl backdrop-blur-md">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4 mb-6">
+                <div className="flex items-center gap-2.5">
+                  <Clock className="h-6 w-6 text-amber-400" />
+                  <div>
+                    <h2 className="text-lg sm:text-xl font-extrabold text-white flex items-center gap-2">
+                      <span>פרויקטים הממתינים לאישור מנהל</span>
+                      <span className="inline-flex items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/40 px-2.5 py-0.5 text-xs font-bold text-amber-300">
+                        {pendingProjects.length}
+                      </span>
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      פרויקטים שהוגשו על ידי משתמשים בעמוד Submit Project. לחיצה על "אשר פרויקט" תעלה אותם מיד ל-Available Projects.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {pendingProjects.length === 0 ? (
+                <div className="rounded-xl border border-white/10 bg-black/30 py-8 px-4 text-center text-slate-400 text-sm">
+                  אין כרגע בקשות פרויקטים הממתינות לאישור.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {pendingProjects.map((proj) => (
+                    <div
+                      key={proj.id}
+                      className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 rounded-xl border border-amber-500/30 bg-black/60 p-5 shadow-lg"
+                    >
+                      <div className="flex flex-col sm:flex-row items-start gap-4 flex-1 min-w-0 w-full" dir="ltr">
+                        {proj.imageUrl ? (
+                          <img
+                            src={proj.imageUrl}
+                            alt={proj.title}
+                            className="h-24 w-32 rounded-lg object-contain bg-white p-1.5 ring-1 ring-white/20 shrink-0"
+                          />
+                        ) : (
+                          <div className="h-24 w-32 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
+                            <ImageIcon className="h-7 w-7" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <span className="inline-block rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 mb-1">
+                            Pending Review
+                          </span>
+                          <h3 className="font-bold text-white text-base sm:text-lg leading-snug">
+                            {proj.title}
+                          </h3>
+                          {proj.supervisor && (
+                            <p className="text-xs sm:text-sm font-semibold text-cyan-400 mt-1">
+                              {proj.supervisor}
+                            </p>
+                          )}
+                          <p className="text-xs sm:text-sm text-slate-300 mt-2 whitespace-pre-line leading-relaxed">
+                            {proj.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0 self-end md:self-center">
+                        <button
+                          type="button"
+                          onClick={() => handleApprovePending(proj.id)}
+                          className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-lg shadow-emerald-600/30 transition-all hover:scale-105 cursor-pointer"
+                        >
+                          <Check className="h-4 w-4" />
+                          <span>אשר פרויקט</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRejectPending(proj.id, proj.title)}
+                          className="flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/15 hover:bg-red-500/25 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-red-300 transition-colors cursor-pointer"
+                        >
+                          <XCircle className="h-4 w-4" />
+                          <span>לא מאשר (מחק)</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 2. DIRECT ADMIN UPLOAD / EDIT FORM */}
             <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-6 sm:p-8 shadow-xl backdrop-blur-md">
               <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
                 <div className="flex items-center gap-2">
                   <PlusCircle className="h-5 w-5 text-cyan-400" />
                   <h2 className="text-lg sm:text-xl font-bold text-white">
-                    {editingId ? "עריכת פרויקט קיים" : "העלאת פרויקט חדש"}
+                    {editingId ? "עריכת פרויקט קיים" : "הוספת פרויקט ישירות על ידי מנהל"}
                   </h2>
                 </div>
                 {editingId && (
                   <button
                     onClick={handleCancelEdit}
-                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-white"
+                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-white cursor-pointer"
                   >
                     <X className="h-4 w-4" /> ביטול עריכה
                   </button>
@@ -360,13 +498,14 @@ function SecretAdminPage() {
                 {/* Title */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-200 mb-1.5">
-                    כותרת הפרויקט (Project Title) <span className="text-cyan-400">*</span>
+                    כותרת הפרויקט (Title) <span className="text-cyan-400">*</span>
                   </label>
                   <input
                     type="text"
+                    dir="ltr"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="לדוגמה: Quantum Mpemba effect: why hot water can make ice faster than cold water"
+                    placeholder="Title here..."
                     className="w-full rounded-xl border border-white/15 bg-black/50 px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                     required
                   />
@@ -375,13 +514,14 @@ function SecretAdminPage() {
                 {/* Supervisor */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-200 mb-1.5">
-                    מנחה ופרטי יצירת קשר (Supervisor)
+                    מנחה ופרטי קשר (Supervisor: who made it + mail)
                   </label>
                   <input
                     type="text"
+                    dir="ltr"
                     value={supervisor}
                     onChange={(e) => setSupervisor(e.target.value)}
-                    placeholder="לדוגמה: Supervisor: David Gelbwaser (dgelbi@technion.ac.il)"
+                    placeholder="Supervisor: Name (email@technion.ac.il)"
                     className="w-full rounded-xl border border-white/15 bg-black/50 px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                   />
                 </div>
@@ -392,10 +532,11 @@ function SecretAdminPage() {
                     תיאור הפרויקט (Description) <span className="text-cyan-400">*</span>
                   </label>
                   <textarea
-                    rows={6}
+                    rows={5}
+                    dir="ltr"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="תיאור מלא של הפרויקט, מטרות המחקר ושאלות מדעיות..."
+                    placeholder="Project description..."
                     className="w-full rounded-xl border border-white/15 bg-black/50 p-4 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 leading-relaxed"
                     required
                   />
@@ -408,10 +549,11 @@ function SecretAdminPage() {
                       מקורות / מאמרים (References — אופציונלי)
                     </label>
                     <textarea
-                      rows={4}
+                      rows={3}
+                      dir="ltr"
                       value={references}
                       onChange={(e) => setReferences(e.target.value)}
-                      placeholder="• Mpemba, Erasto B. (1969)...&#10;• Lu, Z., & Raz, O. (2017)..."
+                      placeholder="• Reference 1..."
                       className="w-full rounded-xl border border-white/15 bg-black/50 p-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 leading-relaxed"
                     />
                   </div>
@@ -421,10 +563,11 @@ function SecretAdminPage() {
                       דרישות קדם (Prerequisites — אופציונלי)
                     </label>
                     <textarea
-                      rows={4}
+                      rows={3}
+                      dir="ltr"
                       value={prerequisites}
                       onChange={(e) => setPrerequisites(e.target.value)}
-                      placeholder="לדוגמה: Basic programming skills in any language (python, mathematica, matlab, etc) and basic quantum mechanics"
+                      placeholder="Basic programming skills and quantum mechanics..."
                       className="w-full rounded-xl border border-white/15 bg-black/50 p-3 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 leading-relaxed"
                     />
                   </div>
@@ -433,15 +576,13 @@ function SecretAdminPage() {
                 {/* Image Upload Area */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-200 mb-1.5">
-                    תמונה / גרף לפרויקט (ורצוי גם קובץ PDF מקורי אם קיים)
+                    תמונה / גרף לפרויקט (Image) וקובץ PDF אופציונלי
                   </label>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {/* File upload */}
                     <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/20 bg-black/30 p-4 hover:border-cyan-500/50 transition-colors">
                       <Upload className="h-7 w-7 text-cyan-400 mb-1.5" />
                       <span className="text-xs font-semibold text-slate-200">העלה תמונה מהמכשיר</span>
-                      <span className="text-[11px] text-slate-500 mt-0.5">PNG, JPG, WEBP</span>
                       <input
                         ref={fileInputRef}
                         type="file"
@@ -451,11 +592,11 @@ function SecretAdminPage() {
                       />
                     </div>
 
-                    {/* Image URL input */}
                     <div className="flex flex-col justify-center rounded-xl border border-white/15 bg-black/30 p-4">
                       <span className="text-xs font-semibold text-slate-200 mb-1">או קישור לתמונה (URL):</span>
                       <input
                         type="url"
+                        dir="ltr"
                         value={imageUrlInput}
                         onChange={(e) => {
                           setImageUrlInput(e.target.value);
@@ -466,11 +607,9 @@ function SecretAdminPage() {
                       />
                     </div>
 
-                    {/* Optional PDF upload */}
                     <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/20 bg-black/30 p-4 hover:border-cyan-500/50 transition-colors">
                       <FileText className="h-7 w-7 text-cyan-400 mb-1.5" />
                       <span className="text-xs font-semibold text-slate-200">צרף קובץ PDF (אופציונלי)</span>
-                      <span className="text-[11px] text-slate-500 mt-0.5">לצפייה במסמך המקורי</span>
                       <input
                         ref={pdfInputRef}
                         type="file"
@@ -481,7 +620,6 @@ function SecretAdminPage() {
                     </div>
                   </div>
 
-                  {/* Image preview */}
                   {imagePreview && (
                     <div className="mt-4 relative rounded-xl border border-white/10 bg-black/60 p-3 max-w-md">
                       <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-xs text-slate-300">
@@ -495,7 +633,7 @@ function SecretAdminPage() {
                             setImageUrlInput("");
                             if (fileInputRef.current) fileInputRef.current.value = "";
                           }}
-                          className="text-red-400 hover:text-red-300 text-xs"
+                          className="text-red-400 hover:text-red-300 text-xs cursor-pointer"
                         >
                           הסר תמונה
                         </button>
@@ -518,7 +656,7 @@ function SecretAdminPage() {
                     className="rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3 px-6 shadow-lg shadow-cyan-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center gap-2 cursor-pointer"
                   >
                     <PlusCircle className="h-5 w-5" />
-                    <span>{editingId ? "שמור שינויים בפרויקט" : "העלה פרויקט חדש לאתר"}</span>
+                    <span>{editingId ? "שמור שינויים בפרויקט" : "העלה פרויקט ישירות לאתר"}</span>
                   </button>
                   {editingId && (
                     <button
@@ -533,18 +671,21 @@ function SecretAdminPage() {
               </form>
             </div>
 
-            {/* Existing Projects List */}
+            {/* 3. APPROVED / LIVE PROJECTS LIST */}
             <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 sm:p-8 backdrop-blur-md">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4 mb-6">
                 <div>
-                  <h2 className="text-xl font-bold text-white">פרויקטים מוצגים באתר ({projects.length})</h2>
-                  <p className="text-xs text-slate-400 mt-1">כל פרויקט שמופיע כאן יוצג באופן מיידי בלשונית Projects</p>
+                  <h2 className="text-xl font-bold text-white">
+                    פרויקטים מאושרים המוצגים ב-Available Projects ({projects.length})
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1">
+                    כל פרויקט ברשימה זו מופיע כרגע בעמוד Projects הפומבי באתר
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleExportJSON}
                     className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 transition-colors cursor-pointer"
-                    title="הורד קובץ JSON של כל הפרויקטים לגיבוי"
                   >
                     <Download className="h-3.5 w-3.5 text-cyan-400" />
                     <span>הורד גיבוי JSON</span>
@@ -553,13 +694,13 @@ function SecretAdminPage() {
                     onClick={handleResetDefaults}
                     className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                   >
-                    איפוס לברירת מחדל
+                    איפוס ל-4 הפרויקטים ההתחלתיים
                   </button>
                   <button
                     onClick={() => {
                       if (confirm("האם למחוק את כל הפרויקטים מהאתר?")) {
                         clearAllProjects();
-                        setProjects([]);
+                        refreshAll();
                       }
                     }}
                     className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
@@ -571,7 +712,7 @@ function SecretAdminPage() {
 
               {projects.length === 0 ? (
                 <div className="py-12 text-center text-slate-400">
-                  <p>אין כרגע פרויקטים במערכת. השתמש בטופס שלמעלה כדי להוסיף את הפרויקט הראשון!</p>
+                  <p>אין כרגע פרויקטים מאושרים באתר.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -580,7 +721,7 @@ function SecretAdminPage() {
                       key={proj.id}
                       className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/40 p-4 hover:border-cyan-500/30 transition-all"
                     >
-                      <div className="flex items-start gap-4 flex-1">
+                      <div className="flex items-start gap-4 flex-1 min-w-0" dir="ltr">
                         {proj.imageUrl ? (
                           <img
                             src={proj.imageUrl}
