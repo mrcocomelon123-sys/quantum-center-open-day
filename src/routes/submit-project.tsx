@@ -2,7 +2,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useRef, type FormEvent } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
-import { submitPendingProject } from "@/lib/projects-store";
+import {
+  submitPendingProject,
+  compressImageFile,
+  normalizeExternalUrl,
+} from "@/lib/projects-store";
 import {
   Send,
   Upload,
@@ -14,6 +18,7 @@ import {
   Info,
   ArrowRight,
   RotateCcw,
+  Link2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/submit-project")({
@@ -34,13 +39,15 @@ function SubmitProjectPage() {
   const [title, setTitle] = useState("");
   const [supervisor, setSupervisor] = useState("");
   const [description, setDescription] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const [imagePreview, setImagePreview] = useState("");
   const [imageUrlInput, setImageUrlInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -49,13 +56,13 @@ function SubmitProjectPage() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setImagePreview(result);
+    try {
+      const compressed = await compressImageFile(file);
+      setImagePreview(compressed);
       setImageUrlInput("");
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      alert("Failed to process image file.");
+    }
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -65,15 +72,18 @@ function SubmitProjectPage() {
       return;
     }
 
+    setIsSubmitting(true);
     const finalImage = imagePreview || imageUrlInput.trim();
 
     submitPendingProject({
       title: title.trim(),
       supervisor: supervisor.trim(),
       description: description.trim(),
+      linkUrl: normalizeExternalUrl(linkUrl),
       imageUrl: finalImage || undefined,
     });
 
+    setIsSubmitting(false);
     setSubmittedSuccess(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -82,6 +92,7 @@ function SubmitProjectPage() {
     setTitle("");
     setSupervisor("");
     setDescription("");
+    setLinkUrl("");
     setImagePreview("");
     setImageUrlInput("");
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -200,6 +211,23 @@ function SubmitProjectPage() {
                     />
                   </div>
 
+                  {/* Link (Optional) */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-200 mb-1.5">
+                      Link (Lab Website / Paper / arXiv — Optional)
+                    </label>
+                    <div className="relative">
+                      <Link2 className="absolute inset-y-0 start-0 flex items-center ps-3.5 h-full w-4 text-cyan-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={linkUrl}
+                        onChange={(e) => setLinkUrl(e.target.value)}
+                        placeholder="https://arxiv.org/abs/... or https://lab.technion.ac.il"
+                        className="w-full rounded-xl border border-white/15 bg-black/50 ps-10 pe-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                  </div>
+
                   {/* Image Upload / URL */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-200 mb-1.5">
@@ -246,10 +274,13 @@ function SubmitProjectPage() {
                   <div className="pt-3">
                     <button
                       type="submit"
-                      className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3 px-7 shadow-lg shadow-cyan-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+                      disabled={isSubmitting}
+                      className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold py-3 px-7 shadow-lg shadow-cyan-600/30 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Send className="h-4 w-4" />
-                      <span>Submit Project for Approval</span>
+                      <span>
+                        {isSubmitting ? "Submitting..." : "Submit Project for Approval"}
+                      </span>
                     </button>
                   </div>
                 </form>
@@ -305,10 +336,23 @@ function SubmitProjectPage() {
                     </p>
                   </div>
 
-                  {/* 4. Image */}
+                  {/* 4. Link */}
+                  <div className="rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 p-3">
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                      4. Link (Optional)
+                    </span>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-cyan-300 truncate">
+                      <Link2 className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
+                      <span className="truncate">
+                        {linkUrl.trim() || "https://arxiv.org/... or lab website link"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 5. Image */}
                   <div className="rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 p-3">
                     <span className="block text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-2">
-                      4. Image
+                      5. Image
                     </span>
                     {imagePreview ? (
                       <div className="rounded-lg bg-white p-2">

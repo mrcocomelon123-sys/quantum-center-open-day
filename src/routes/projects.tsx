@@ -1,8 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
-import { getProjects, fetchServerProjects, type Project } from "@/lib/projects-store";
+import {
+  getProjects,
+  fetchServerProjects,
+  normalizeExternalUrl,
+  type Project,
+} from "@/lib/projects-store";
 import {
   Search,
   UserCheck,
@@ -17,6 +22,7 @@ import {
   GraduationCap,
   Library,
   PlusCircle,
+  Link2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/projects")({
@@ -41,8 +47,30 @@ export const Route = createFileRoute("/projects")({
   component: ProjectsPage,
 });
 
+function renderTextWithLinks(text: string): ReactNode {
+  const urlRegex = /(https?:\/\/[^\s),]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, idx) => {
+    if (/^https?:\/\//i.test(part)) {
+      return (
+        <a
+          key={idx}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-cyan-400 underline hover:text-cyan-300 break-all"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
 function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(() => getProjects());
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<6 | 9>(6);
@@ -51,9 +79,14 @@ function ProjectsPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       setProjects(getProjects());
-      void fetchServerProjects().then((serverList) => {
-        if (serverList) setProjects(serverList);
-      });
+
+      const syncProjects = () => {
+        void fetchServerProjects().then((serverList) => {
+          if (serverList) setProjects(serverList);
+        });
+      };
+
+      syncProjects();
 
       const handleUpdate = () => {
         setProjects(getProjects());
@@ -61,6 +94,7 @@ function ProjectsPage() {
 
       window.addEventListener("projects-updated", handleUpdate);
       window.addEventListener("storage", handleUpdate);
+      window.addEventListener("focus", syncProjects);
 
       let bc: BroadcastChannel | null = null;
       if ("BroadcastChannel" in window) {
@@ -70,9 +104,13 @@ function ProjectsPage() {
         };
       }
 
+      const pollTimer = window.setInterval(syncProjects, 6000);
+
       return () => {
         window.removeEventListener("projects-updated", handleUpdate);
         window.removeEventListener("storage", handleUpdate);
+        window.removeEventListener("focus", syncProjects);
+        window.clearInterval(pollTimer);
         if (bc) bc.close();
       };
     }
@@ -127,7 +165,7 @@ function ProjectsPage() {
                   Research Projects
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm sm:text-base text-slate-400">
-                  Undergraduate projects, MSc and PhD research opportunities. Click on any project card below to read the full details, references, prerequisites, and figures.
+                  Undergraduate projects, MSc and PhD research opportunities. Click on any project card below to read the full details, links, references, prerequisites, and figures.
                 </p>
               </div>
 
@@ -274,6 +312,12 @@ function ProjectsPage() {
                       </span>
 
                       <div className="flex items-center gap-1.5">
+                        {proj.linkUrl && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-300 border border-blue-500/20">
+                            <Link2 className="h-3 w-3 text-blue-400" />
+                            <span>Link</span>
+                          </span>
+                        )}
                         {proj.imageUrl && (
                           <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2 py-0.5 text-[11px] text-slate-300 border border-white/10">
                             <ImageIcon className="h-3 w-3 text-cyan-400" />
@@ -370,7 +414,7 @@ function ProjectsPage() {
 
             {/* Modal Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Top Info Bar: Supervisor & Optional PDF Link */}
+              {/* Top Info Bar: Supervisor & Optional Link / PDF Buttons */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {selectedProject.supervisor && (
                   <div className="inline-flex items-center gap-2 rounded-xl bg-cyan-950/70 border border-cyan-800/50 px-4 py-2 text-sm font-semibold text-cyan-300">
@@ -379,18 +423,33 @@ function ProjectsPage() {
                   </div>
                 )}
 
-                {selectedProject.pdfUrl && (
-                  <a
-                    href={selectedProject.pdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 px-4 py-2 text-xs sm:text-sm font-semibold text-cyan-300 transition-colors"
-                  >
-                    <FileText className="h-4 w-4 text-cyan-400" />
-                    <span>Open Original PDF</span>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </a>
-                )}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {selectedProject.linkUrl && (
+                    <a
+                      href={normalizeExternalUrl(selectedProject.linkUrl)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/15 hover:bg-blue-500/25 px-4 py-2 text-xs sm:text-sm font-semibold text-blue-300 transition-colors"
+                    >
+                      <Link2 className="h-4 w-4 text-blue-400" />
+                      <span>Open Project Link</span>
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+
+                  {selectedProject.pdfUrl && (
+                    <a
+                      href={selectedProject.pdfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 px-4 py-2 text-xs sm:text-sm font-semibold text-cyan-300 transition-colors"
+                    >
+                      <FileText className="h-4 w-4 text-cyan-400" />
+                      <span>Open Original PDF</span>
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
               </div>
 
               {/* Main Content Grid: Text + References on Left, Figure on Right (if image exists) */}
@@ -408,7 +467,7 @@ function ProjectsPage() {
                 >
                   {/* Full Description */}
                   <div className="text-sm sm:text-base text-slate-200 leading-relaxed whitespace-pre-line">
-                    {selectedProject.description}
+                    {renderTextWithLinks(selectedProject.description)}
                   </div>
 
                   {/* References Section */}
@@ -419,7 +478,7 @@ function ProjectsPage() {
                         <span>References</span>
                       </div>
                       <div className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-                        {selectedProject.references}
+                        {renderTextWithLinks(selectedProject.references)}
                       </div>
                     </div>
                   )}

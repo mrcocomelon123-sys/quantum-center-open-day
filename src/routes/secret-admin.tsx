@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type FormEvent } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import logoImg from "@/assets/logo.png";
@@ -10,11 +10,12 @@ import {
   addProject,
   deleteProject,
   updateProject,
-  saveProjects,
   clearAllProjects,
+  resetToDefaultProjects,
   approvePendingProject,
   rejectPendingProject,
-  INITIAL_PROJECTS,
+  compressImageFile,
+  normalizeExternalUrl,
   type Project,
 } from "@/lib/projects-store";
 import {
@@ -35,6 +36,8 @@ import {
   Clock,
   Check,
   XCircle,
+  RefreshCw,
+  Link2,
 } from "lucide-react";
 
 const ADMIN_PASSWORD = "quantum2026";
@@ -56,14 +59,16 @@ function SecretAdminPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [pendingProjects, setPendingProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(() => getProjects());
+  const [pendingProjects, setPendingProjects] = useState<Project[]>(() => getPendingProjects());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Form states
   const [title, setTitle] = useState("");
   const [supervisor, setSupervisor] = useState("");
   const [description, setDescription] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const [references, setReferences] = useState("");
   const [prerequisites, setPrerequisites] = useState("");
   const [imagePreview, setImagePreview] = useState("");
@@ -73,10 +78,23 @@ function SecretAdminPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
-  const refreshAll = () => {
+  const refreshLocal = useCallback(() => {
     setProjects(getProjects());
     setPendingProjects(getPendingProjects());
-  };
+  }, []);
+
+  const syncFromServer = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      const state = await fetchServerState();
+      if (state) {
+        setProjects(state.projects);
+        setPendingProjects(state.pendingProjects);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -84,36 +102,42 @@ function SecretAdminPage() {
       if (stored === "authenticated") {
         setIsAuthenticated(true);
       }
-      refreshAll();
-      void fetchServerState().then((state) => {
-        if (state) {
-          setProjects(state.projects);
-          setPendingProjects(state.pendingProjects);
-        }
-      });
+      refreshLocal();
+      void syncFromServer();
 
       const handleUpdate = () => {
-        refreshAll();
+        refreshLocal();
+      };
+
+      const handleFocus = () => {
+        void syncFromServer();
       };
 
       window.addEventListener("projects-updated", handleUpdate);
       window.addEventListener("storage", handleUpdate);
+      window.addEventListener("focus", handleFocus);
 
       let bc: BroadcastChannel | null = null;
       if ("BroadcastChannel" in window) {
         bc = new BroadcastChannel("quantum_projects_sync");
         bc.onmessage = () => {
-          refreshAll();
+          refreshLocal();
         };
       }
+
+      const pollTimer = window.setInterval(() => {
+        void syncFromServer();
+      }, 4000);
 
       return () => {
         window.removeEventListener("projects-updated", handleUpdate);
         window.removeEventListener("storage", handleUpdate);
+        window.removeEventListener("focus", handleFocus);
+        window.clearInterval(pollTimer);
         if (bc) bc.close();
       };
     }
-  }, []);
+  }, [refreshLocal, syncFromServer]);
 
   const handleLogin = (e: FormEvent) => {
     e.preventDefault();
@@ -121,7 +145,8 @@ function SecretAdminPage() {
       sessionStorage.setItem(AUTH_KEY, "authenticated");
       setIsAuthenticated(true);
       setErrorMsg("");
-      refreshAll();
+      refreshLocal();
+      void syncFromServer();
     } else {
       setErrorMsg("סיסמה שגויה. נסה שוב.");
     }
@@ -133,7 +158,7 @@ function SecretAdminPage() {
     setPasswordInput("");
   };
 
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -142,13 +167,13 @@ function SecretAdminPage() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setImagePreview(result);
+    try {
+      const compressed = await compressImageFile(file);
+      setImagePreview(compressed);
       setImageUrlInput("");
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      alert("שגיאה בטעינת התמונה");
+    }
   };
 
   const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,6 +197,7 @@ function SecretAdminPage() {
     setTitle("");
     setSupervisor("");
     setDescription("");
+    setLinkUrl("");
     setReferences("");
     setPrerequisites("");
     setImagePreview("");
@@ -189,42 +215,45 @@ function SecretAdminPage() {
     }
 
     const finalImage = imagePreview || imageUrlInput.trim();
+    const normalizedLink = normalizeExternalUrl(linkUrl);
 
     if (editingId) {
       updateProject(editingId, {
         title: title.trim(),
         supervisor: supervisor.trim(),
         description: description.trim(),
+        linkUrl: normalizedLink,
         references: references.trim() || undefined,
         prerequisites: prerequisites.trim() || undefined,
         imageUrl: finalImage,
         pdfUrl: pdfUrl.trim() || undefined,
       });
-      setStatusMsg("הפרויקט עודכן בהצלחה!");
+      setStatusMsg("הפרויקט עודכן בהצלחה ונשמר בענן!");
       setEditingId(null);
     } else {
       addProject({
         title: title.trim(),
         supervisor: supervisor.trim(),
         description: description.trim(),
+        linkUrl: normalizedLink,
         references: references.trim() || undefined,
         prerequisites: prerequisites.trim() || undefined,
         imageUrl: finalImage,
         pdfUrl: pdfUrl.trim() || undefined,
       });
-      setStatusMsg("הפרויקט נוסף בהצלחה למערכת!");
+      setStatusMsg("הפרויקט נוסף בהצלחה ופורסם ב-Available Projects!");
     }
 
     resetForm();
-    refreshAll();
+    refreshLocal();
 
-    setTimeout(() => setStatusMsg(""), 4000);
+    setTimeout(() => setStatusMsg(""), 4500);
   };
 
   const handleApprovePending = (id: string) => {
     const approved = approvePendingProject(id);
     if (approved) {
-      refreshAll();
+      refreshLocal();
       setStatusMsg(`הפרויקט "${approved.title}" אושר והועלה מיד ל-Available Projects!`);
       setTimeout(() => setStatusMsg(""), 4500);
     }
@@ -233,7 +262,7 @@ function SecretAdminPage() {
   const handleRejectPending = (id: string, projTitle: string) => {
     if (confirm(`האם לדחות ולמחוק את בקשת הפרויקט "${projTitle}"?`)) {
       rejectPendingProject(id);
-      refreshAll();
+      refreshLocal();
       setStatusMsg("בקשת הפרויקט נדחתה והוסרה.");
       setTimeout(() => setStatusMsg(""), 3500);
     }
@@ -244,6 +273,7 @@ function SecretAdminPage() {
     setTitle(proj.title);
     setSupervisor(proj.supervisor);
     setDescription(proj.description);
+    setLinkUrl(proj.linkUrl || "");
     setReferences(proj.references || "");
     setPrerequisites(proj.prerequisites || "");
     setImagePreview(proj.imageUrl || "");
@@ -260,7 +290,7 @@ function SecretAdminPage() {
   const handleDelete = (id: string, projTitle: string) => {
     if (confirm(`האם אתה בטוח שברצונך למחוק את הפרויקט "${projTitle}"?`)) {
       deleteProject(id);
-      refreshAll();
+      refreshLocal();
     }
   };
 
@@ -280,8 +310,10 @@ function SecretAdminPage() {
 
   const handleResetDefaults = () => {
     if (confirm("האם לאפס את רשימת הפרויקטים ל-4 הפרויקטים האמיתיים ההתחלתיים?")) {
-      saveProjects(INITIAL_PROJECTS);
-      refreshAll();
+      resetToDefaultProjects();
+      refreshLocal();
+      setStatusMsg("רשימת הפרויקטים אופסה ל-4 הפרויקטים ההתחלתיים.");
+      setTimeout(() => setStatusMsg(""), 4000);
     }
   };
 
@@ -356,7 +388,7 @@ function SecretAdminPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/30">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> מחובר כמנהל
+                    <CheckCircle2 className="h-3.5 w-3.5" /> מחובר כמנהל (מסונכרן לענן)
                   </span>
                   <span className="text-xs text-slate-400 font-mono" dir="ltr">Admin Panel</span>
                 </div>
@@ -366,6 +398,14 @@ function SecretAdminPage() {
               </div>
 
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void syncFromServer()}
+                  className="flex items-center gap-1.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/20 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                  <span>רענן מהשרת</span>
+                </button>
                 <Link
                   to="/projects"
                   target="_blank"
@@ -404,7 +444,7 @@ function SecretAdminPage() {
                       </span>
                     </h2>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      פרויקטים שהוגשו על ידי משתמשים בעמוד Submit Project. לחיצה על "אשר פרויקט" תעלה אותם מיד ל-Available Projects.
+                      פרויקטים שהוגשו על ידי חוקרים/משתמשים בעמוד Submit Project. לחיצה על "אשר פרויקט" תעלה אותם מיד ל-Available Projects לכולם.
                     </p>
                   </div>
                 </div>
@@ -444,6 +484,17 @@ function SecretAdminPage() {
                             <p className="text-xs sm:text-sm font-semibold text-cyan-400 mt-1">
                               {proj.supervisor}
                             </p>
+                          )}
+                          {proj.linkUrl && (
+                            <a
+                              href={proj.linkUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-cyan-300 hover:underline"
+                            >
+                              <Link2 className="h-3.5 w-3.5" />
+                              <span className="truncate max-w-xs">{proj.linkUrl}</span>
+                            </a>
                           )}
                           <p className="text-xs sm:text-sm text-slate-300 mt-2 whitespace-pre-line leading-relaxed">
                             {proj.description}
@@ -522,6 +573,21 @@ function SecretAdminPage() {
                     value={supervisor}
                     onChange={(e) => setSupervisor(e.target.value)}
                     placeholder="Supervisor: Name (email@technion.ac.il)"
+                    className="w-full rounded-xl border border-white/15 bg-black/50 px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  />
+                </div>
+
+                {/* Link (Optional) */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-200 mb-1.5">
+                    קישור לפרויקט / מאמר / אתר מעבדה (Link — אופציונלי)
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    placeholder="https://arxiv.org/abs/... or https://lab.technion.ac.il"
                     className="w-full rounded-xl border border-white/15 bg-black/50 px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                   />
                 </div>
@@ -679,7 +745,7 @@ function SecretAdminPage() {
                     פרויקטים מאושרים המוצגים ב-Available Projects ({projects.length})
                   </h2>
                   <p className="text-xs text-slate-400 mt-1">
-                    כל פרויקט ברשימה זו מופיע כרגע בעמוד Projects הפומבי באתר
+                    כל פרויקט ברשימה זו מופיע כרגע בעמוד Projects הפומבי באתר לכולם
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -700,7 +766,7 @@ function SecretAdminPage() {
                     onClick={() => {
                       if (confirm("האם למחוק את כל הפרויקטים מהאתר?")) {
                         clearAllProjects();
-                        refreshAll();
+                        refreshLocal();
                       }
                     }}
                     className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
@@ -741,6 +807,17 @@ function SecretAdminPage() {
                             <p className="text-xs font-semibold text-cyan-400 mt-1">
                               {proj.supervisor}
                             </p>
+                          )}
+                          {proj.linkUrl && (
+                            <a
+                              href={proj.linkUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-cyan-300 hover:underline"
+                            >
+                              <Link2 className="h-3 w-3" />
+                              <span className="truncate max-w-xs">{proj.linkUrl}</span>
+                            </a>
                           )}
                           <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                             {proj.description}
