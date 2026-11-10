@@ -75,6 +75,54 @@ export const INITIAL_PROJECTS: Project[] = [
     updatedAt: 1794250200000,
     status: "approved",
   },
+  {
+    id: "proj-time-crystals-5",
+    title: "Controlling Light Through Time: Photonic Time Crystals",
+    supervisor: "Contact Person: Oded Schiller (odedschiller@campus.technion.ac.il)",
+    description:
+      "What if we could control light by changing materials in time? Explore the fascinating physics of photonic time crystals, where light can be amplified, reflected in time, and manipulated in ways impossible in conventional optical systems.",
+    imageUrl: "/project-photonic-time-crystals.png",
+    pdfUrl: "/photonic-time-crystals.pdf",
+    createdAt: "2026-11-10T13:50:00.000Z",
+    updatedAt: 1794318600000,
+    status: "approved",
+  },
+  {
+    id: "proj-topological-photonics-6",
+    title: "Light That Defies Defects: Topological Photonics",
+    supervisor: "Contact Person: Roey Shafran (roeyshafran@campus.technion.ac.il)",
+    description:
+      "Imagine light traveling around sharp corners and imperfections without scattering. Discover how topology enables robust, protected states of light and explore the exciting possibilities of topological photonic systems.",
+    imageUrl: "/project-topological-photonics.png",
+    pdfUrl: "/topological-photonics.pdf",
+    createdAt: "2026-11-10T13:51:00.000Z",
+    updatedAt: 1794318660000,
+    status: "approved",
+  },
+  {
+    id: "proj-entangled-photons-7",
+    title: "Engineering Entangled Photons: Quantum Optics and Quantum Light",
+    supervisor: "Contact Person: Roey Shafran (roeyshafran@campus.technion.ac.il)",
+    description:
+      "Explore the strange and fascinating world of quantum light, from single photons to quantum entanglement. Discover how quantum states of light can be generated and controlled, opening new possibilities for quantum communication, computing, and sensing.",
+    imageUrl: "/project-entangled-photons.png",
+    pdfUrl: "/entangled-photons.pdf",
+    createdAt: "2026-11-10T13:52:00.000Z",
+    updatedAt: 1794318720000,
+    status: "approved",
+  },
+  {
+    id: "proj-ai-quantum-phases-8",
+    title: "Can AI Discover Quantum Phases? Machine Learning for Quantum Many-Body Physics",
+    supervisor: "Contact Person: Roey Shafran (roeyshafran@campus.technion.ac.il)",
+    description:
+      "Can artificial intelligence uncover hidden phenomena in complex quantum systems? Combine machine learning with quantum physics to discover patterns, identify phase transitions, and explore the collective behavior of quantum many-body systems.",
+    imageUrl: "/project-ai-quantum-phases.png",
+    pdfUrl: "/ai-quantum-phases.pdf",
+    createdAt: "2026-11-10T13:53:00.000Z",
+    updatedAt: 1794318780000,
+    status: "approved",
+  },
 ];
 
 export const INITIAL_PENDING_PROJECTS: Project[] = [
@@ -210,7 +258,21 @@ export function getProjects(): Project[] {
       return INITIAL_PROJECTS;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : INITIAL_PROJECTS;
+    if (!Array.isArray(parsed)) return INITIAL_PROJECTS;
+    const deletedSet = new Set(getDeletedIds());
+    const existingIds = new Set(parsed.map((p: Project) => p.id));
+    let addedDefault = false;
+    const merged = [...parsed];
+    for (const initProj of INITIAL_PROJECTS) {
+      if (!existingIds.has(initProj.id) && !deletedSet.has(initProj.id)) {
+        merged.push(initProj);
+        addedDefault = true;
+      }
+    }
+    if (addedDefault) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    }
+    return merged;
   } catch (err) {
     console.error("Failed to load projects from localStorage:", err);
     return INITIAL_PROJECTS;

@@ -36,10 +36,19 @@ function sanitizeState(raw: unknown): StoredState | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Partial<StoredState>;
   if (!Array.isArray(obj.projects)) return null;
+  const deletedIds = Array.isArray(obj.deletedIds) ? obj.deletedIds : [];
+  const deletedSet = new Set(deletedIds);
+  const existingIds = new Set(obj.projects.map((p) => p.id));
+  const mergedProjects = [...obj.projects];
+  for (const initProj of INITIAL_PROJECTS) {
+    if (!existingIds.has(initProj.id) && !deletedSet.has(initProj.id)) {
+      mergedProjects.push(initProj);
+    }
+  }
   return {
-    projects: obj.projects,
+    projects: mergedProjects,
     pendingProjects: Array.isArray(obj.pendingProjects) ? obj.pendingProjects : [],
-    deletedIds: Array.isArray(obj.deletedIds) ? obj.deletedIds : [],
+    deletedIds,
     rejectedIds: Array.isArray(obj.rejectedIds) ? obj.rejectedIds : [],
     version: typeof obj.version === "number" ? obj.version : 1,
     updatedAt: typeof obj.updatedAt === "number" ? obj.updatedAt : Date.now(),
