@@ -6,13 +6,13 @@ import { SiteFooter } from "@/components/SiteFooter";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Welcome — Quantum Center Open Day | Technion" },
+      { title: "Helen Diller Quantum Center — Open Day | Technion" },
       {
         name: "description",
         content:
           "Helen Diller Quantum Center Open Day at the Technion. Undergraduate projects, MSc and PhD research opportunities.",
       },
-      { property: "og:title", content: "Welcome — Quantum Center Open Day" },
+      { property: "og:title", content: "Helen Diller Quantum Center — Open Day" },
       {
         property: "og:description",
         content: "Explore research opportunities at the Helen Diller Quantum Center, Technion.",

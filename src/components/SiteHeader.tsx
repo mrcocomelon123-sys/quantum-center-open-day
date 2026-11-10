@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import logoImg from "@/assets/logo.png";
 
 const NAV = [
-  { to: "/", label: "Welcome" },
   { to: "/projects", label: "Projects" },
   { to: "/submit-project", label: "Submit Project" },
 ] as const;
