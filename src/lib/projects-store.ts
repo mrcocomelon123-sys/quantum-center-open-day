@@ -207,7 +207,7 @@ export async function compressImageFile(file: File): Promise<string> {
       img.onerror = () => resolve(dataUrl);
       img.onload = () => {
         try {
-          const maxDim = 960;
+          const maxDim = 760;
           let { width, height } = img;
           if (width > maxDim || height > maxDim) {
             if (width > height) {
@@ -229,7 +229,10 @@ export async function compressImageFile(file: File): Promise<string> {
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL("image/jpeg", 0.78);
+          let compressed = canvas.toDataURL("image/jpeg", 0.74);
+          if (compressed.length > 42000) {
+            compressed = canvas.toDataURL("image/jpeg", 0.6);
+          }
           resolve(compressed);
         } catch {
           resolve(dataUrl);

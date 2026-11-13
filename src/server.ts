@@ -223,9 +223,13 @@ async function loadInlineImageChunks(
   const cached = imageMemoryCache.get(imgId);
   if (cached) return cached;
 
-  const topicUrl = `https://ntfy.sh/hdqc_v7_${imgId}/json?poll=1&since=all`;
+  const topicUrl = `https://ntfy.sh/hdqc_v7_${imgId}/json?poll=1&since=all&_=${Date.now()}`;
   try {
-    const res = await fetchWithTimeout(topicUrl, {}, 4000);
+    const res = await fetchWithTimeout(
+      topicUrl,
+      { headers: { "cache-control": "no-cache" } },
+      4000
+    );
     if (!res.ok) return null;
     const text = await res.text();
     const lines = text.trim().split("\n").filter(Boolean);
@@ -340,8 +344,8 @@ async function writeNtfyInlineState(delta: CloudDelta): Promise<void> {
 async function readCloudDelta(): Promise<CloudDelta | null> {
   try {
     const pollRes = await fetchWithTimeout(
-      `${NTFY_STATE_TOPIC_URL}/json?poll=1&since=all`,
-      {},
+      `${NTFY_STATE_TOPIC_URL}/json?poll=1&since=all&_=${Date.now()}`,
+      { headers: { "cache-control": "no-cache" } },
       3500
     );
     if (pollRes.ok) {
