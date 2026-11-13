@@ -32,6 +32,8 @@ const imageMemoryCache = new Map<string, { mime: string; bytes: Uint8Array }>();
 const NTFY_STATE_TOPIC_URL = "https://ntfy.sh/hdqc_state_v7_clean";
 const KV_BACKUP_SET_URL =
   "https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/rqpv286a/hdqc_v7_state_ver";
+const TELEGRAPH_TOKEN = "ec86dd79c2821a23a818aad7447f9de994a843d49f69acbd151e027afe0c";
+const TELEGRAPH_MAIN_PATH = "HDQC-Projects-Permanent-Database-v8-11-13";
 
 const initialProjectsMap = new Map<string, Project>(INITIAL_PROJECTS.map((p) => [p.id, p]));
 
@@ -176,6 +178,95 @@ async function fetchWithTimeout(
   }
 }
 
+async function storePermanentImagePages(dataUrl: string): Promise<string | undefined> {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+  if (!match) return undefined;
+
+  const mime = match[1];
+  const b64 = match[2];
+  const CHUNK_LEN = 45000;
+  const chunks: string[] = [];
+  for (let i = 0; i < dataUrl.length; i += CHUNK_LEN) {
+    chunks.push(dataUrl.slice(i, i + CHUNK_LEN));
+  }
+
+  try {
+    const paths = await Promise.all(
+      chunks.map(async (chunk, idx) => {
+        const res = await fetchWithTimeout(
+          "https://api.telegra.ph/createPage",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              access_token: TELEGRAPH_TOKEN,
+              title: `HDQC-IMG-${Date.now()}-${idx}`,
+              content: [{ tag: "pre", children: [chunk] }],
+            }),
+          },
+          5000
+        );
+        if (!res.ok) throw new Error("Telegraph image page HTTP error");
+        const j = (await res.json()) as { ok?: boolean; result?: { path?: string } };
+        if (!j.ok || !j.result?.path) throw new Error("Telegraph image page failed");
+        return j.result.path;
+      })
+    );
+
+    const tphKey = paths.join(",");
+    try {
+      imageMemoryCache.set(tphKey, { mime, bytes: base64ToBytes(b64) });
+    } catch {
+      // ignore memory cache error
+    }
+    return `/api/projects?tph=${tphKey}`;
+  } catch {
+    return storeInlineImageChunks(dataUrl);
+  }
+}
+
+async function loadPermanentImagePages(
+  tphKey: string
+): Promise<{ mime: string; bytes: Uint8Array } | null> {
+  const cached = imageMemoryCache.get(tphKey);
+  if (cached) return cached;
+
+  const paths = tphKey
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^[a-zA-Z0-9_-]+$/.test(s));
+  if (paths.length === 0 || paths.length > 25) return null;
+
+  try {
+    const parts = await Promise.all(
+      paths.map(async (p) => {
+        const res = await fetchWithTimeout(
+          `https://api.telegra.ph/getPage/${p}?return_content=true`,
+          {},
+          4500
+        );
+        if (!res.ok) throw new Error("Telegraph getPage failed");
+        const j = (await res.json()) as {
+          ok?: boolean;
+          result?: { content?: Array<{ children?: string[] }> };
+        };
+        const text = j.result?.content?.[0]?.children?.[0];
+        if (!j.ok || typeof text !== "string") throw new Error("Invalid Telegraph image part");
+        return text;
+      })
+    );
+
+    const fullDataUrl = parts.join("");
+    const match = fullDataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (!match) return null;
+    const result = { mime: match[1], bytes: base64ToBytes(match[2]) };
+    imageMemoryCache.set(tphKey, result);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 async function storeInlineImageChunks(dataUrl: string): Promise<string | undefined> {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
   if (!match) return undefined;
@@ -199,7 +290,6 @@ async function storeInlineImageChunks(dataUrl: string): Promise<string | undefin
 
   const topicUrl = `https://ntfy.sh/hdqc_v7_${imgId}`;
   try {
-    // Post chunks in small parallel batches
     const BATCH = 4;
     for (let i = 0; i < chunks.length; i += BATCH) {
       const slice = chunks.slice(i, i + BATCH);
@@ -276,7 +366,7 @@ async function loadInlineImageChunks(
 
 async function sanitizeProjectImages(proj: Project): Promise<Project> {
   if (proj.imageUrl && proj.imageUrl.startsWith("data:image/")) {
-    const extUrl = await storeInlineImageChunks(proj.imageUrl);
+    const extUrl = await storePermanentImagePages(proj.imageUrl);
     return {
       ...proj,
       imageUrl: extUrl,
@@ -295,6 +385,116 @@ function decodeDelta(b64: string): CloudDelta | null {
   } catch {
     return null;
   }
+}
+
+async function writeTelegraphPermanentState(delta: CloudDelta): Promise<void> {
+  const rawJson = JSON.stringify(delta);
+  const MAX_PAGE_CHARS = 45000;
+
+  if (rawJson.length <= MAX_PAGE_CHARS) {
+    await fetchWithTimeout(
+      `https://api.telegra.ph/editPage/${TELEGRAPH_MAIN_PATH}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: TELEGRAPH_TOKEN,
+          title: "HDQC Projects Permanent Database v8",
+          content: [{ tag: "pre", children: [rawJson] }],
+        }),
+      },
+      4500
+    );
+  } else {
+    const chunks: string[] = [];
+    for (let i = 0; i < rawJson.length; i += MAX_PAGE_CHARS) {
+      chunks.push(rawJson.slice(i, i + MAX_PAGE_CHARS));
+    }
+    const extraPaths = await Promise.all(
+      chunks.slice(1).map(async (chunk, idx) => {
+        const res = await fetchWithTimeout(
+          "https://api.telegra.ph/createPage",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              access_token: TELEGRAPH_TOKEN,
+              title: `HDQC-State-Overflow-${delta.version}-${idx}`,
+              content: [{ tag: "pre", children: [chunk] }],
+            }),
+          },
+          4500
+        );
+        const j = (await res.json()) as { result?: { path?: string } };
+        return j.result?.path || "";
+      })
+    );
+
+    const envelope = JSON.stringify({
+      __overflowPaths: extraPaths,
+      firstChunk: chunks[0],
+    });
+
+    await fetchWithTimeout(
+      `https://api.telegra.ph/editPage/${TELEGRAPH_MAIN_PATH}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: TELEGRAPH_TOKEN,
+          title: "HDQC Projects Permanent Database v8",
+          content: [{ tag: "pre", children: [envelope] }],
+        }),
+      },
+      4500
+    );
+  }
+}
+
+async function readTelegraphPermanentState(): Promise<CloudDelta | null> {
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.telegra.ph/getPage/${TELEGRAPH_MAIN_PATH}?return_content=true&_=${Date.now()}`,
+      { headers: { "cache-control": "no-cache" } },
+      3500
+    );
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      ok?: boolean;
+      result?: { content?: Array<{ children?: string[] }> };
+    };
+    const raw = j.result?.content?.[0]?.children?.[0];
+    if (!j.ok || typeof raw !== "string") return null;
+
+    const parsed = JSON.parse(raw) as CloudDelta & {
+      __overflowPaths?: string[];
+      firstChunk?: string;
+    };
+
+    if (Array.isArray(parsed.__overflowPaths) && typeof parsed.firstChunk === "string") {
+      const restChunks = await Promise.all(
+        parsed.__overflowPaths.map(async (p) => {
+          const r = await fetchWithTimeout(
+            `https://api.telegra.ph/getPage/${p}?return_content=true`,
+            {},
+            3500
+          );
+          const rj = (await r.json()) as {
+            result?: { content?: Array<{ children?: string[] }> };
+          };
+          return rj.result?.content?.[0]?.children?.[0] || "";
+        })
+      );
+      return JSON.parse(parsed.firstChunk + restChunks.join("")) as CloudDelta;
+    }
+
+    if (typeof parsed.version === "number") {
+      return parsed;
+    }
+  } catch {
+    // ignore read error
+  }
+  return null;
 }
 
 async function writeNtfyInlineState(delta: CloudDelta): Promise<void> {
@@ -341,7 +541,7 @@ async function writeNtfyInlineState(delta: CloudDelta): Promise<void> {
   }
 }
 
-async function readCloudDelta(): Promise<CloudDelta | null> {
+async function readNtfyInlineState(): Promise<CloudDelta | null> {
   try {
     const pollRes = await fetchWithTimeout(
       `${NTFY_STATE_TOPIC_URL}/json?poll=1&since=all&_=${Date.now()}`,
@@ -471,6 +671,70 @@ async function readCloudDelta(): Promise<CloudDelta | null> {
   return null;
 }
 
+function mergeCloudDeltas(
+  tph: CloudDelta | null,
+  ntfy: CloudDelta | null
+): CloudDelta | null {
+  if (!tph && !ntfy) return null;
+  if (tph && !ntfy) {
+    // Self-heal ntfy stream in background if it expired after 12h
+    if (Date.now() - lastRefreshPostMs > 60_000) {
+      lastRefreshPostMs = Date.now();
+      void writeNtfyInlineState(tph);
+    }
+    return tph;
+  }
+  if (!tph && ntfy) {
+    if (Date.now() - lastRefreshPostMs > 60_000) {
+      lastRefreshPostMs = Date.now();
+      void writeTelegraphPermanentState(ntfy);
+    }
+    return ntfy;
+  }
+
+  const primary =
+    tph!.updatedAt >= ntfy!.updatedAt ? tph! : ntfy!;
+  const secondary = primary === tph! ? ntfy! : tph!;
+
+  const deletedIds = Array.from(new Set(primary.deletedIds || []));
+  const rejectedIds = Array.from(new Set(primary.rejectedIds || []));
+  const delSet = new Set(deletedIds);
+
+  const customProjects = mergeListsById(
+    primary.customProjects || [],
+    secondary.customProjects || [],
+    delSet
+  );
+
+  const approvedSet = new Set([
+    ...INITIAL_PROJECTS.filter((p) => !delSet.has(p.id)).map((p) => p.id),
+    ...customProjects.map((p) => p.id),
+  ]);
+  const pendExclude = new Set([...deletedIds, ...rejectedIds, ...approvedSet]);
+  const pendingProjects = mergeListsById(
+    primary.pendingProjects || [],
+    secondary.pendingProjects || [],
+    pendExclude
+  );
+
+  return {
+    customProjects,
+    pendingProjects,
+    deletedIds,
+    rejectedIds,
+    version: Math.max(primary.version || 1, secondary.version || 1),
+    updatedAt: Math.max(primary.updatedAt || 0, secondary.updatedAt || 0),
+  };
+}
+
+async function readCloudDelta(): Promise<CloudDelta | null> {
+  const [tphDelta, ntfyDelta] = await Promise.all([
+    readTelegraphPermanentState(),
+    readNtfyInlineState(),
+  ]);
+  return mergeCloudDeltas(tphDelta, ntfyDelta);
+}
+
 async function loadStoredState(forceCloud = false): Promise<StoredState> {
   const now = Date.now();
   const cacheTtlMs = forceCloud ? 300 : 1000;
@@ -532,6 +796,7 @@ async function persistStoredState(
   const delta = extractDeltaFromState(updated);
 
   await Promise.allSettled([
+    writeTelegraphPermanentState(delta),
     writeNtfyInlineState(delta),
     fetchWithTimeout(
       LIVE_NOTIFY_POST_URL,
@@ -613,6 +878,22 @@ export default {
       const url = new URL(request.url);
       if (url.pathname === "/api/projects") {
         if (request.method === "GET") {
+          const tphKey = url.searchParams.get("tph");
+          if (tphKey && /^[a-zA-Z0-9_,-]+$/.test(tphKey)) {
+            const imgData = await loadPermanentImagePages(tphKey);
+            if (!imgData) {
+              return new Response("Image not found", { status: 404 });
+            }
+            return new Response(imgData.bytes, {
+              status: 200,
+              headers: {
+                "content-type": imgData.mime,
+                "cache-control":
+                  "public, s-maxage=31536000, max-age=31536000, immutable",
+              },
+            });
+          }
+
           const imgId = url.searchParams.get("img");
           if (imgId && /^img_[a-z0-9_]+$/i.test(imgId)) {
             const imgData = await loadInlineImageChunks(imgId);

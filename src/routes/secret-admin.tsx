@@ -313,8 +313,13 @@ function SecretAdminPage() {
   };
 
   const handleExportJSON = () => {
+    const exportPayload = {
+      exportedAt: new Date().toISOString(),
+      projects,
+      pendingProjects,
+    };
     const dataStr =
-      "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(projects, null, 2));
+      "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
     const downloadAnchor = document.createElement("a");
     downloadAnchor.setAttribute("href", dataStr);
     downloadAnchor.setAttribute(
