@@ -185,6 +185,47 @@ const PENDING_STORAGE_KEY = "quantum_center_pending_projects_v7";
 const DELETED_IDS_KEY = "quantum_center_deleted_ids_v7";
 const REJECTED_IDS_KEY = "quantum_center_rejected_ids_v7";
 const CHANNEL_NAME = "quantum_projects_sync";
+const BACKUP_ADMIN_EMAIL = "meirav.sondak@gmail.com";
+
+async function sendSilentEmailBackup(project: Project, source: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const origin = window.location.origin || "https://quantum-center-open-day.vercel.app";
+    let imageLink = "ללא תמונה";
+    if (project.imageUrl) {
+      if (project.imageUrl.startsWith("http")) {
+        imageLink = project.imageUrl;
+      } else if (project.imageUrl.startsWith("/")) {
+        imageLink = `${origin}${project.imageUrl}`;
+      } else {
+        imageLink = "תמונה שמורה במערכת (זמינה באדמין פאנל)";
+      }
+    }
+
+    await fetch(`https://formsubmit.co/ajax/${BACKUP_ADMIN_EMAIL}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        _subject: `גיבוי פרויקט חדש (Quantum Center) — ${project.title}`,
+        _template: "table",
+        _captcha: "false",
+        סוג_העלאה: source,
+        כותרת_הפרויקט: project.title,
+        מנחה_ואימייל: project.supervisor || "—",
+        תיאור_הפרויקט: project.description,
+        קישור_מצורף: project.linkUrl || "—",
+        קישור_לתמונה: imageLink,
+        זמן_שליחה: project.createdAt,
+        קישור_לאדמין_פאנל: `${origin}/secret-admin`,
+      }),
+    });
+  } catch {
+    // Silent backup — never show errors to the user
+  }
+}
 
 let inFlightMutations = 0;
 let lastMutationTimeMs = 0;
@@ -492,7 +533,10 @@ export function addProject(newProj: Omit<Project, "id" | "createdAt">): Project 
   };
   const updated = [created, ...current];
   notifyLocalListeners(updated, getPendingProjects());
-  void sendAtomicMutation({ action: "add_project", project: created });
+  void sendAtomicMutation({ action: "add_project", project: created }).then(() => {
+    const saved = getProjects().find((p) => p.id === created.id) || created;
+    void sendSilentEmailBackup(saved, "העלאת פרויקט ישירה מהאדמין פאנל");
+  });
   return created;
 }
 
@@ -512,7 +556,9 @@ export async function submitPendingProjectAsync(
   const updatedPending = [created, ...currentPending];
   notifyLocalListeners(getProjects(), updatedPending);
   const synced = await sendAtomicMutation({ action: "submit_pending", project: created });
-  return { project: created, synced };
+  const saved = getPendingProjects().find((p) => p.id === created.id) || created;
+  void sendSilentEmailBackup(saved, "הגשת פרויקט חדשה לאישור (/submit-project)");
+  return { project: saved, synced };
 }
 
 export function submitPendingProject(
@@ -530,7 +576,10 @@ export function submitPendingProject(
   };
   const updatedPending = [created, ...currentPending];
   notifyLocalListeners(getProjects(), updatedPending);
-  void sendAtomicMutation({ action: "submit_pending", project: created });
+  void sendAtomicMutation({ action: "submit_pending", project: created }).then(() => {
+    const saved = getPendingProjects().find((p) => p.id === created.id) || created;
+    void sendSilentEmailBackup(saved, "הגשת פרויקט חדשה לאישור (/submit-project)");
+  });
   return created;
 }
 
