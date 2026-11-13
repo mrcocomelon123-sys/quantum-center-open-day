@@ -1,5 +1,4 @@
 import "./lib/error-capture";
-import zlib from "node:zlib";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
@@ -28,23 +27,48 @@ let serverEntryPromise: Promise<ServerEntry> | undefined;
 let memoryState: StoredState | null = null;
 let lastCloudCheckMs = 0;
 let lastRefreshPostMs = 0;
+const imageMemoryCache = new Map<string, { mime: string; bytes: Uint8Array }>();
 
-const TMP_FILE = "/tmp/quantum_projects_store_v7.json";
-const NTFY_STATE_TOPIC_URL = "https://ntfy.sh/hdqc_state_stream_v7";
-const NTFY_IMG_TOPIC_URL = "https://ntfy.sh/hdqc_img_blobs_v7";
+const NTFY_STATE_TOPIC_URL = "https://ntfy.sh/hdqc_state_v7_clean";
 const KV_BACKUP_SET_URL =
-  "https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/rqpv286a/hdqc_v7_backup";
-const KV_BACKUP_GET_URL =
-  "https://keyvalue.immanuel.co/api/KeyVal/GetValue/rqpv286a/hdqc_v7_backup";
+  "https://keyvalue.immanuel.co/api/KeyVal/UpdateValue/rqpv286a/hdqc_v7_state_ver";
 
 const initialProjectsMap = new Map<string, Project>(INITIAL_PROJECTS.map((p) => [p.id, p]));
+
+function utf8ToBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToUtf8(b64: string): string {
+  const binary = atob(b64.trim());
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64.trim());
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 
 function createDefaultState(): StoredState {
   return {
     projects: [...INITIAL_PROJECTS],
     pendingProjects: [...INITIAL_PENDING_PROJECTS],
     deletedIds: [],
-    rejectedIds: [],
+    rejectedIds: ["pending-mwav7q9d-hzs6", "pending-mwapzaam-np8g", "pending-mwazrlsd-91j0"],
     version: 1,
     updatedAt: 1794566000000,
   };
@@ -64,7 +88,6 @@ function reconstructStateFromDelta(delta: Partial<CloudDelta>): StoredState {
   const customMap = new Map<string, Project>();
   const finalProjects: Project[] = [];
 
-  // First put custom/newly added projects in order
   for (const cp of customProjects) {
     if (cp && cp.id && !deletedSet.has(cp.id)) {
       customMap.set(cp.id, cp);
@@ -74,7 +97,6 @@ function reconstructStateFromDelta(delta: Partial<CloudDelta>): StoredState {
     }
   }
 
-  // Then include INITIAL_PROJECTS (using edited version if present in customMap)
   for (const initProj of INITIAL_PROJECTS) {
     if (deletedSet.has(initProj.id)) continue;
     const edited = customMap.get(initProj.id);
@@ -154,86 +176,103 @@ async function fetchWithTimeout(
   }
 }
 
-async function externalizeDataUrlImage(imageUrl?: string): Promise<string | undefined> {
-  if (!imageUrl) return undefined;
-  if (!imageUrl.startsWith("data:image/")) return imageUrl;
-
-  const match = imageUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+async function storeInlineImageChunks(dataUrl: string): Promise<string | undefined> {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
   if (!match) return undefined;
 
-  const mimeType = match[1];
-  const base64Data = match[2];
-  const ext = mimeType.includes("png") ? "png" : mimeType.includes("webp") ? "webp" : "jpg";
-  const binaryBuffer = Buffer.from(base64Data, "base64");
-  const blob = new Blob([binaryBuffer], { type: mimeType });
-  const filename = `project-${Date.now()}.${ext}`;
+  const mime = match[1];
+  const b64 = match[2];
+  const imgId =
+    "img_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
 
-  // Upload to 3 independent hosts in parallel and pick the best permanent/long-lived URL
-  const uploadCatbox = async (): Promise<string> => {
-    const fd = new FormData();
-    fd.append("reqtype", "fileupload");
-    fd.append("fileToUpload", blob, filename);
-    const res = await fetchWithTimeout(
-      "https://catbox.moe/user/api.php",
-      { method: "POST", body: fd },
-      5000
-    );
-    if (!res.ok) throw new Error("catbox failed");
-    const url = (await res.text()).trim();
-    if (!url.startsWith("https://")) throw new Error("invalid catbox url");
-    return url;
-  };
-
-  const uploadLitterbox = async (): Promise<string> => {
-    const fd = new FormData();
-    fd.append("reqtype", "fileupload");
-    fd.append("time", "72h");
-    fd.append("fileToUpload", blob, filename);
-    const res = await fetchWithTimeout(
-      "https://litterbox.catbox.moe/resources/internals/api.php",
-      { method: "POST", body: fd },
-      4500
-    );
-    if (!res.ok) throw new Error("litterbox failed");
-    const url = (await res.text()).trim();
-    if (!url.startsWith("https://")) throw new Error("invalid litterbox url");
-    return url;
-  };
-
-  const uploadNtfyImage = async (): Promise<string> => {
-    const res = await fetchWithTimeout(
-      NTFY_IMG_TOPIC_URL,
-      {
-        method: "PUT",
-        headers: { Filename: filename },
-        body: binaryBuffer,
-      },
-      4500
-    );
-    if (!res.ok) throw new Error("ntfy image failed");
-    const j = (await res.json()) as { attachment?: { url?: string } };
-    if (!j?.attachment?.url) throw new Error("no ntfy attachment url");
-    return j.attachment.url;
-  };
-
-  const results = await Promise.allSettled([
-    uploadCatbox(),
-    uploadLitterbox(),
-    uploadNtfyImage(),
-  ]);
-
-  for (const r of results) {
-    if (r.status === "fulfilled" && r.value) {
-      return r.value;
-    }
+  try {
+    imageMemoryCache.set(imgId, { mime, bytes: base64ToBytes(b64) });
+  } catch {
+    // ignore memory cache error
   }
 
-  return undefined;
+  const CHUNK_LEN = 3400;
+  const chunks: string[] = [];
+  for (let i = 0; i < b64.length; i += CHUNK_LEN) {
+    chunks.push(b64.slice(i, i + CHUNK_LEN));
+  }
+
+  const topicUrl = `https://ntfy.sh/hdqc_v7_${imgId}`;
+  try {
+    // Post chunks in small parallel batches
+    const BATCH = 4;
+    for (let i = 0; i < chunks.length; i += BATCH) {
+      const slice = chunks.slice(i, i + BATCH);
+      await Promise.all(
+        slice.map((chunk, offset) => {
+          const idx = i + offset;
+          const body = `IMGPART:${idx}:${chunks.length}:${mime}:${chunk}`;
+          return fetchWithTimeout(topicUrl, { method: "POST", body }, 4000);
+        })
+      );
+    }
+    return `/api/projects?img=${imgId}`;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadInlineImageChunks(
+  imgId: string
+): Promise<{ mime: string; bytes: Uint8Array } | null> {
+  const cached = imageMemoryCache.get(imgId);
+  if (cached) return cached;
+
+  const topicUrl = `https://ntfy.sh/hdqc_v7_${imgId}/json?poll=1&since=all`;
+  try {
+    const res = await fetchWithTimeout(topicUrl, {}, 4000);
+    if (!res.ok) return null;
+    const text = await res.text();
+    const lines = text.trim().split("\n").filter(Boolean);
+    let total = 0;
+    let mime = "image/jpeg";
+    const parts = new Map<number, string>();
+
+    for (const line of lines) {
+      try {
+        const ev = JSON.parse(line) as { event?: string; message?: string };
+        if (ev.event !== "message" || typeof ev.message !== "string") continue;
+        if (!ev.message.startsWith("IMGPART:")) continue;
+        const first = ev.message.indexOf(":", 8);
+        const second = ev.message.indexOf(":", first + 1);
+        const third = ev.message.indexOf(":", second + 1);
+        if (first > 0 && second > 0 && third > 0) {
+          const idx = Number(ev.message.slice(8, first));
+          total = Number(ev.message.slice(first + 1, second));
+          mime = ev.message.slice(second + 1, third);
+          const chunk = ev.message.slice(third + 1);
+          parts.set(idx, chunk);
+        }
+      } catch {
+        // ignore line error
+      }
+    }
+
+    if (total > 0 && parts.size === total) {
+      let fullB64 = "";
+      for (let i = 0; i < total; i++) {
+        const c = parts.get(i);
+        if (c === undefined) return null;
+        fullB64 += c;
+      }
+      const result = { mime, bytes: base64ToBytes(fullB64) };
+      imageMemoryCache.set(imgId, result);
+      return result;
+    }
+  } catch {
+    // ignore fetch error
+  }
+  return null;
 }
 
 async function sanitizeProjectImages(proj: Project): Promise<Project> {
   if (proj.imageUrl && proj.imageUrl.startsWith("data:image/")) {
-    const extUrl = await externalizeDataUrlImage(proj.imageUrl);
+    const extUrl = await storeInlineImageChunks(proj.imageUrl);
     return {
       ...proj,
       imageUrl: extUrl,
@@ -242,26 +281,24 @@ async function sanitizeProjectImages(proj: Project): Promise<Project> {
   return proj;
 }
 
-function compressDelta(delta: CloudDelta): string {
-  const json = JSON.stringify(delta);
-  return zlib.deflateRawSync(Buffer.from(json, "utf-8")).toString("base64");
+function encodeDelta(delta: CloudDelta): string {
+  return utf8ToBase64(JSON.stringify(delta));
 }
 
-function decompressDelta(b64: string): CloudDelta | null {
+function decodeDelta(b64: string): CloudDelta | null {
   try {
-    const raw = zlib.inflateRawSync(Buffer.from(b64, "base64")).toString("utf-8");
-    return JSON.parse(raw) as CloudDelta;
+    return JSON.parse(base64ToUtf8(b64)) as CloudDelta;
   } catch {
     return null;
   }
 }
 
 async function writeNtfyInlineState(delta: CloudDelta): Promise<void> {
-  const compressed = compressDelta(delta);
+  const encoded = encodeDelta(delta);
   const MAX_CHUNK = 3200;
 
-  if (compressed.length <= MAX_CHUNK) {
-    const msg = `V7_SINGLE:${delta.version}:${delta.updatedAt}:${compressed}`;
+  if (encoded.length <= MAX_CHUNK) {
+    const msg = `V7_SINGLE:${delta.version}:${delta.updatedAt}:${encoded}`;
     await fetchWithTimeout(
       NTFY_STATE_TOPIC_URL,
       {
@@ -272,8 +309,8 @@ async function writeNtfyInlineState(delta: CloudDelta): Promise<void> {
     );
   } else {
     const chunks: string[] = [];
-    for (let i = 0; i < compressed.length; i += MAX_CHUNK) {
-      chunks.push(compressed.slice(i, i + MAX_CHUNK));
+    for (let i = 0; i < encoded.length; i += MAX_CHUNK) {
+      chunks.push(encoded.slice(i, i + MAX_CHUNK));
     }
     for (let idx = 0; idx < chunks.length; idx++) {
       const msg = `V7_PART:${delta.version}:${delta.updatedAt}:${idx}:${chunks.length}:${chunks[idx]}`;
@@ -287,82 +324,54 @@ async function writeNtfyInlineState(delta: CloudDelta): Promise<void> {
       );
     }
   }
-}
 
-async function writePermanentBackup(delta: CloudDelta): Promise<void> {
-  const json = JSON.stringify(delta);
-  const blob = new Blob([json], { type: "application/json" });
-  let backupUrl = "";
-
+  // Record version metadata in keyvalue backup
   try {
-    const fd = new FormData();
-    fd.append("reqtype", "fileupload");
-    fd.append("fileToUpload", blob, "delta_v7.json");
-    const cbRes = await fetchWithTimeout(
-      "https://catbox.moe/user/api.php",
-      { method: "POST", body: fd },
-      4500
+    await fetchWithTimeout(
+      `${KV_BACKUP_SET_URL}/${delta.version}_${delta.updatedAt}`,
+      { method: "POST" },
+      2500
     );
-    if (cbRes.ok) {
-      const txt = (await cbRes.text()).trim();
-      if (txt.startsWith("https://")) backupUrl = txt;
-    }
   } catch {
-    // ignore catbox error
-  }
-
-  if (!backupUrl) {
-    try {
-      const fd = new FormData();
-      fd.append("reqtype", "fileupload");
-      fd.append("time", "72h");
-      fd.append("fileToUpload", blob, "delta_v7.json");
-      const lbRes = await fetchWithTimeout(
-        "https://litterbox.catbox.moe/resources/internals/api.php",
-        { method: "POST", body: fd },
-        4000
-      );
-      if (lbRes.ok) {
-        const txt = (await lbRes.text()).trim();
-        if (txt.startsWith("https://")) backupUrl = txt;
-      }
-    } catch {
-      // ignore litterbox error
-    }
-  }
-
-  if (backupUrl) {
-    try {
-      const encoded = Buffer.from(backupUrl, "utf-8").toString("base64url");
-      await fetchWithTimeout(`${KV_BACKUP_SET_URL}/${encoded}`, { method: "POST" }, 3500);
-    } catch {
-      // ignore kv pointer error
-    }
+    // ignore metadata backup error
   }
 }
 
 async function readCloudDelta(): Promise<CloudDelta | null> {
-  // 1. Primary: Read inline text messages from ntfy.sh in ONE single GET request
   try {
     const pollRes = await fetchWithTimeout(
       `${NTFY_STATE_TOPIC_URL}/json?poll=1&since=all`,
-      { cache: "no-store" },
+      {},
       3500
     );
     if (pollRes.ok) {
       const text = await pollRes.text();
       const lines = text.trim().split("\n").filter(Boolean);
 
-      let bestSingle: { version: number; updatedAt: number; b64: string; timeSec: number } | null =
-        null;
+      let bestSingle: {
+        version: number;
+        updatedAt: number;
+        b64: string;
+        timeSec: number;
+      } | null = null;
       const multiParts = new Map<
         string,
-        { version: number; updatedAt: number; total: number; parts: Map<number, string>; timeSec: number }
+        {
+          version: number;
+          updatedAt: number;
+          total: number;
+          parts: Map<number, string>;
+          timeSec: number;
+        }
       >();
 
       for (const line of lines) {
         try {
-          const ev = JSON.parse(line) as { event?: string; message?: string; time?: number };
+          const ev = JSON.parse(line) as {
+            event?: string;
+            message?: string;
+            time?: number;
+          };
           if (ev.event !== "message" || typeof ev.message !== "string") continue;
           const msg = ev.message;
           const timeSec = typeof ev.time === "number" ? ev.time : 0;
@@ -404,9 +413,14 @@ async function readCloudDelta(): Promise<CloudDelta | null> {
         }
       }
 
-      let bestCandidate: { updatedAt: number; b64: string; timeSec: number } | null = bestSingle
-        ? { updatedAt: bestSingle.updatedAt, b64: bestSingle.b64, timeSec: bestSingle.timeSec }
-        : null;
+      let bestCandidate: { updatedAt: number; b64: string; timeSec: number } | null =
+        bestSingle
+          ? {
+              updatedAt: bestSingle.updatedAt,
+              b64: bestSingle.b64,
+              timeSec: bestSingle.timeSec,
+            }
+          : null;
 
       for (const entry of multiParts.values()) {
         if (entry.parts.size === entry.total) {
@@ -431,9 +445,8 @@ async function readCloudDelta(): Promise<CloudDelta | null> {
       }
 
       if (bestCandidate) {
-        const delta = decompressDelta(bestCandidate.b64);
+        const delta = decodeDelta(bestCandidate.b64);
         if (delta) {
-          // Auto-renew ntfy 12-hour TTL if latest message is > 2 hours old
           const ageSec = Date.now() / 1000 - bestCandidate.timeSec;
           if (
             bestCandidate.timeSec > 0 &&
@@ -448,31 +461,7 @@ async function readCloudDelta(): Promise<CloudDelta | null> {
       }
     }
   } catch {
-    // fallback to permanent backup
-  }
-
-  // 2. Fallback: If ntfy stream was empty (e.g. >12h of zero visitors), read permanent backup pointer
-  try {
-    const kvRes = await fetchWithTimeout(KV_BACKUP_GET_URL, { cache: "no-store" }, 3000);
-    if (kvRes.ok) {
-      const encoded = (await kvRes.text()).replace(/"/g, "").trim();
-      if (encoded) {
-        const backupUrl = Buffer.from(encoded, "base64url").toString("utf-8");
-        if (backupUrl.startsWith("https://")) {
-          const blobRes = await fetchWithTimeout(backupUrl, { cache: "no-store" }, 4000);
-          if (blobRes.ok) {
-            const delta = (await blobRes.json()) as CloudDelta;
-            if (delta && typeof delta === "object") {
-              // Re-seed ntfy inline stream so subsequent reads are fast 1-hop
-              void writeNtfyInlineState(delta);
-              return delta;
-            }
-          }
-        }
-      }
-    }
-  } catch {
-    // ignore fallback error
+    // ignore read error
   }
 
   return null;
@@ -480,43 +469,23 @@ async function readCloudDelta(): Promise<CloudDelta | null> {
 
 async function loadStoredState(forceCloud = false): Promise<StoredState> {
   const now = Date.now();
-  const cacheTtlMs = forceCloud ? 400 : 1200;
+  const cacheTtlMs = forceCloud ? 300 : 1000;
 
   if (memoryState !== null && now - lastCloudCheckMs < cacheTtlMs) {
     return memoryState;
-  }
-
-  if (memoryState === null) {
-    try {
-      const fs = await import("node:fs/promises");
-      const raw = await fs.readFile(TMP_FILE, "utf-8");
-      const parsed = JSON.parse(raw) as StoredState;
-      if (parsed && Array.isArray(parsed.projects)) {
-        memoryState = reconstructStateFromDelta(extractDeltaFromState(parsed));
-      }
-    } catch {
-      // /tmp not written yet on this instance
-    }
   }
 
   lastCloudCheckMs = now;
   const cloudDelta = await readCloudDelta();
   if (cloudDelta) {
     const cloudState = reconstructStateFromDelta(cloudDelta);
-    // Keep memoryState only if THIS lambda wrote a newer state within the last 4 seconds
     const localIsVeryRecentWrite =
       memoryState !== null &&
       memoryState.updatedAt > cloudState.updatedAt &&
-      now - memoryState.updatedAt < 4000;
+      now - memoryState.updatedAt < 3500;
 
     if (!localIsVeryRecentWrite) {
       memoryState = cloudState;
-      try {
-        const fs = await import("node:fs/promises");
-        await fs.writeFile(TMP_FILE, JSON.stringify(memoryState), "utf-8");
-      } catch {
-        // ignore /tmp error
-      }
     }
     return memoryState!;
   }
@@ -532,7 +501,9 @@ async function persistStoredState(
   actionName: string
 ): Promise<StoredState> {
   const now = Date.now();
-  const sanitizedProjects = await Promise.all(nextState.projects.map(sanitizeProjectImages));
+  const sanitizedProjects = await Promise.all(
+    nextState.projects.map(sanitizeProjectImages)
+  );
   const sanitizedPending = await Promise.all(
     nextState.pendingProjects.map(sanitizeProjectImages)
   );
@@ -554,18 +525,10 @@ async function persistStoredState(
   lastCloudCheckMs = now;
   lastRefreshPostMs = now;
 
-  try {
-    const fs = await import("node:fs/promises");
-    await fs.writeFile(TMP_FILE, JSON.stringify(updated), "utf-8");
-  } catch {
-    // ignore /tmp errors
-  }
-
   const delta = extractDeltaFromState(updated);
 
   await Promise.allSettled([
     writeNtfyInlineState(delta),
-    writePermanentBackup(delta),
     fetchWithTimeout(
       LIVE_NOTIFY_POST_URL,
       {
@@ -584,7 +547,11 @@ async function persistStoredState(
   return updated;
 }
 
-function mergeListsById(primary: Project[], secondary: Project[], exclude: Set<string>): Project[] {
+function mergeListsById(
+  primary: Project[],
+  secondary: Project[],
+  exclude: Set<string>
+): Project[] {
   const map = new Map<string, Project>();
   for (const item of primary) {
     if (item && item.id && !exclude.has(item.id)) {
@@ -618,7 +585,9 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   const body = await response.clone().text();
   if (!isH3SwallowedErrorBody(body)) return response;
 
-  console.error(consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`));
+  console.error(
+    consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`)
+  );
   return new Response(renderErrorPage(), {
     status: 500,
     headers: { "content-type": "text/html; charset=utf-8" },
@@ -640,6 +609,22 @@ export default {
       const url = new URL(request.url);
       if (url.pathname === "/api/projects") {
         if (request.method === "GET") {
+          const imgId = url.searchParams.get("img");
+          if (imgId && /^img_[a-z0-9_]+$/i.test(imgId)) {
+            const imgData = await loadInlineImageChunks(imgId);
+            if (!imgData) {
+              return new Response("Image not found", { status: 404 });
+            }
+            return new Response(imgData.bytes, {
+              status: 200,
+              headers: {
+                "content-type": imgData.mime,
+                "cache-control":
+                  "public, s-maxage=31536000, max-age=31536000, immutable",
+              },
+            });
+          }
+
           const isFresh = url.searchParams.get("fresh") === "1";
           const state = await loadStoredState(isFresh);
           return new Response(JSON.stringify(state), {
@@ -654,7 +639,8 @@ export default {
         if (request.method === "POST") {
           const body = (await request.json()) as Record<string, unknown>;
           const current = await loadStoredState(true);
-          const action = typeof body.action === "string" ? body.action : "legacy_sync";
+          const action =
+            typeof body.action === "string" ? body.action : "legacy_sync";
 
           let projects = [...current.projects];
           let pendingProjects = [...current.pendingProjects];
@@ -683,7 +669,10 @@ export default {
                 status: "approved",
                 updatedAt: Date.now(),
               };
-              projects = [approvedProj, ...projects.filter((p) => p.id !== targetId)];
+              projects = [
+                approvedProj,
+                ...projects.filter((p) => p.id !== targetId),
+              ];
               deletedIds = deletedIds.filter((id) => id !== targetId);
             }
           } else if (action === "reject_pending" && typeof body.id === "string") {
@@ -703,10 +692,15 @@ export default {
             const exists = projects.some((p) => p.id === targetId);
             if (exists) {
               projects = projects.map((p) =>
-                p.id === targetId ? { ...p, ...updates, updatedAt: Date.now() } : p
+                p.id === targetId
+                  ? { ...p, ...updates, updatedAt: Date.now() }
+                  : p
               );
             } else if (fallbackProject) {
-              projects = [{ ...fallbackProject, updatedAt: Date.now() }, ...projects];
+              projects = [
+                { ...fallbackProject, updatedAt: Date.now() },
+                ...projects,
+              ];
             }
           } else if (action === "delete_project" && typeof body.id === "string") {
             const targetId = body.id;
@@ -721,7 +715,12 @@ export default {
             const currentIds = projects.map((p) => p.id);
             const initIds = INITIAL_PROJECTS.map((p) => p.id);
             deletedIds = Array.from(
-              new Set([...deletedIds, ...currentIds, ...initIds, ...extraDeleted])
+              new Set([
+                ...deletedIds,
+                ...currentIds,
+                ...initIds,
+                ...extraDeleted,
+              ])
             );
             projects = [];
           } else if (action === "reset_defaults") {
@@ -735,7 +734,9 @@ export default {
               ? (body.rejectedIds as string[])
               : [];
             deletedIds = Array.from(new Set([...deletedIds, ...clientDeleted]));
-            rejectedIds = Array.from(new Set([...rejectedIds, ...clientRejected]));
+            rejectedIds = Array.from(
+              new Set([...rejectedIds, ...clientRejected])
+            );
 
             const delSet = new Set(deletedIds);
             const clientProjects = Array.isArray(body.projects)
@@ -744,11 +745,19 @@ export default {
             projects = mergeListsById(projects, clientProjects, delSet);
 
             const approvedSet = new Set(projects.map((p) => p.id));
-            const pendExclude = new Set([...rejectedIds, ...deletedIds, ...approvedSet]);
+            const pendExclude = new Set([
+              ...rejectedIds,
+              ...deletedIds,
+              ...approvedSet,
+            ]);
             const clientPending = Array.isArray(body.pendingProjects)
               ? (body.pendingProjects as Project[])
               : [];
-            pendingProjects = mergeListsById(pendingProjects, clientPending, pendExclude);
+            pendingProjects = mergeListsById(
+              pendingProjects,
+              clientPending,
+              pendExclude
+            );
           }
 
           const saved = await persistStoredState(
