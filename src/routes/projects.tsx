@@ -4,8 +4,9 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import {
   getProjects,
-  fetchServerProjects,
+  fetchServerState,
   normalizeExternalUrl,
+  LIVE_NOTIFY_SSE_URL,
   type Project,
 } from "@/lib/projects-store";
 import {
@@ -80,21 +81,25 @@ function ProjectsPage() {
     if (typeof window !== "undefined") {
       setProjects(getProjects());
 
-      const syncProjects = () => {
-        void fetchServerProjects().then((serverList) => {
-          if (serverList) setProjects(serverList);
+      const syncProjects = (fresh = false) => {
+        void fetchServerState(fresh).then((state) => {
+          if (state?.projects) setProjects(state.projects);
         });
       };
 
-      syncProjects();
+      syncProjects(true);
 
       const handleUpdate = () => {
         setProjects(getProjects());
       };
 
+      const handleFocus = () => {
+        syncProjects(true);
+      };
+
       window.addEventListener("projects-updated", handleUpdate);
       window.addEventListener("storage", handleUpdate);
-      window.addEventListener("focus", syncProjects);
+      window.addEventListener("focus", handleFocus);
 
       let bc: BroadcastChannel | null = null;
       if ("BroadcastChannel" in window) {
@@ -104,14 +109,31 @@ function ProjectsPage() {
         };
       }
 
-      const pollTimer = window.setInterval(syncProjects, 6000);
+      let es: EventSource | null = null;
+      if ("EventSource" in window) {
+        try {
+          es = new EventSource(LIVE_NOTIFY_SSE_URL);
+          es.onmessage = () => {
+            syncProjects(true);
+          };
+        } catch {
+          // ignore SSE setup errors
+        }
+      }
+
+      const pollTimer = window.setInterval(() => {
+        if (document.visibilityState === "visible") {
+          syncProjects(false);
+        }
+      }, 4000);
 
       return () => {
         window.removeEventListener("projects-updated", handleUpdate);
         window.removeEventListener("storage", handleUpdate);
-        window.removeEventListener("focus", syncProjects);
+        window.removeEventListener("focus", handleFocus);
         window.clearInterval(pollTimer);
         if (bc) bc.close();
+        if (es) es.close();
       };
     }
   }, []);

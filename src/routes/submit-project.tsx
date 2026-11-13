@@ -3,7 +3,7 @@ import { useState, useRef, type FormEvent } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import {
-  submitPendingProject,
+  submitPendingProjectAsync,
   compressImageFile,
   normalizeExternalUrl,
 } from "@/lib/projects-store";
@@ -65,7 +65,7 @@ function SubmitProjectPage() {
     }
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !supervisor.trim() || !description.trim()) {
       alert("Please fill in the Title, Supervisor, and Description fields.");
@@ -75,17 +75,20 @@ function SubmitProjectPage() {
     setIsSubmitting(true);
     const finalImage = imagePreview || imageUrlInput.trim();
 
-    submitPendingProject({
-      title: title.trim(),
-      supervisor: supervisor.trim(),
-      description: description.trim(),
-      linkUrl: normalizeExternalUrl(linkUrl),
-      imageUrl: finalImage || undefined,
-    });
+    try {
+      await submitPendingProjectAsync({
+        title: title.trim(),
+        supervisor: supervisor.trim(),
+        description: description.trim(),
+        linkUrl: normalizeExternalUrl(linkUrl),
+        imageUrl: finalImage || undefined,
+      });
 
-    setIsSubmitting(false);
-    setSubmittedSuccess(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+      setSubmittedSuccess(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleReset = () => {

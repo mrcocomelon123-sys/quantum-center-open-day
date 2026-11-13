@@ -16,6 +16,7 @@ import {
   rejectPendingProject,
   compressImageFile,
   normalizeExternalUrl,
+  LIVE_NOTIFY_SSE_URL,
   type Project,
 } from "@/lib/projects-store";
 import {
@@ -83,10 +84,10 @@ function SecretAdminPage() {
     setPendingProjects(getPendingProjects());
   }, []);
 
-  const syncFromServer = useCallback(async () => {
+  const syncFromServer = useCallback(async (forceFresh = true) => {
     setIsSyncing(true);
     try {
-      const state = await fetchServerState();
+      const state = await fetchServerState(forceFresh);
       if (state) {
         setProjects(state.projects);
         setPendingProjects(state.pendingProjects);
@@ -103,14 +104,14 @@ function SecretAdminPage() {
         setIsAuthenticated(true);
       }
       refreshLocal();
-      void syncFromServer();
+      void syncFromServer(true);
 
       const handleUpdate = () => {
         refreshLocal();
       };
 
       const handleFocus = () => {
-        void syncFromServer();
+        void syncFromServer(true);
       };
 
       window.addEventListener("projects-updated", handleUpdate);
@@ -125,9 +126,25 @@ function SecretAdminPage() {
         };
       }
 
+      // Real-time Server-Sent Events (SSE) push listener for instant (<0.1s) submission arrival
+      let es: EventSource | null = null;
+      if ("EventSource" in window) {
+        try {
+          es = new EventSource(LIVE_NOTIFY_SSE_URL);
+          es.onmessage = () => {
+            void syncFromServer(true);
+          };
+        } catch {
+          // ignore SSE setup errors
+        }
+      }
+
+      // Fast continuous server scan (every 1.2s when visible)
       const pollTimer = window.setInterval(() => {
-        void syncFromServer();
-      }, 4000);
+        if (document.visibilityState === "visible") {
+          void syncFromServer(true);
+        }
+      }, 1200);
 
       return () => {
         window.removeEventListener("projects-updated", handleUpdate);
@@ -135,6 +152,7 @@ function SecretAdminPage() {
         window.removeEventListener("focus", handleFocus);
         window.clearInterval(pollTimer);
         if (bc) bc.close();
+        if (es) es.close();
       };
     }
   }, [refreshLocal, syncFromServer]);

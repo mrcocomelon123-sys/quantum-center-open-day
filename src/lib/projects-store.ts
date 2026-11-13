@@ -22,6 +22,9 @@ export interface StoredState {
   updatedAt: number;
 }
 
+export const LIVE_NOTIFY_SSE_URL = "https://ntfy.sh/hdqc_live_notify_v7/sse";
+export const LIVE_NOTIFY_POST_URL = "https://ntfy.sh/hdqc_live_notify_v7";
+
 export const INITIAL_PROJECTS: Project[] = [
   {
     id: "proj-mpemba-1",
@@ -123,9 +126,6 @@ export const INITIAL_PROJECTS: Project[] = [
     updatedAt: 1794318780000,
     status: "approved",
   },
-];
-
-export const INITIAL_PENDING_PROJECTS: Project[] = [
   {
     id: "pending-mwapzaam-np8g",
     title: "Quantum-Secure Multiparty Deep Learning",
@@ -138,15 +138,52 @@ export const INITIAL_PENDING_PROJECTS: Project[] = [
       '1. K. Sulimany et al., "Quantum-secure multiparty deep learning," Phys. Rev. X 15, 041056 (2025).\n2. M. Ben-Shahar, Y. Morag, D. Englund, K. Sulimany, "Quantum cryptography and autoformalization in Lean," arXiv:2610.17286 (2026).',
     linkUrl: "https://arxiv.org/abs/2610.17286",
     createdAt: "2026-11-10T13:22:23.326Z",
-    updatedAt: 1794316943326,
-    status: "pending",
+    updatedAt: 1794330471315,
+    status: "approved",
+  },
+  {
+    id: "pending-mwav7q9d-hzs6",
+    title: "Exploring Unconventional Superconductivity at the Atomic Scale",
+    supervisor: "Avior Almoalem - avioral@technion.ac.il",
+    description:
+      "How do electrons pair in unconventional superconductors, and what can atomic defects and material edges reveal about their quantum state? Our group uses low-temperature scanning tunneling microscopy and spectroscopy (STM/STS), device fabrication and transport to explore these questions in layered and kagome quantum materials.\n\nThe project will consist of imaging surfaces with atomic resolution, measuring superconducting gaps and electronic excitations, investigating their response to impurities, magnetic fields, changes in composition and fabricating devices to elucidate transport response under defined geometry. Advanced directions include superconducting tips that probe Cooper-pair tunneling and the development of spin-sensitive probes to investigate connections between superconductivity, magnetism, and topology.\n\nMSc projects will focus on a well-defined experimental question, while PhD projects can combine advanced probe development with systematic investigations of unconventional superconductivity. Hands-on experience in cryogenics, ultrahigh vacuum, precision measurements, scientific programming, and data analysis will be a core part of the project.",
+    linkUrl: "https://arxiv.org/abs/2608.28848",
+    imageUrl: "/project-avior-superconductivity.jpg",
+    createdAt: "2026-11-10T15:48:55.345Z",
+    updatedAt: 1794330469718,
+    status: "approved",
+  },
+  {
+    id: "proj-mwaz7v5g-b4ma",
+    title: "Quantum Information at Its Limits: From One Copy to Many",
+    supervisor: "Gilad Gour (giladgour@gmail.com)",
+    description:
+      "How much can a quantum device achieve when every qubit, channel use, or entangled pair counts? Many fundamental results describe an idealized setting where resources can be used arbitrarily many times. This project explores what becomes possible when only a few resources are available, seeking universal bounds that connect quantum communication, entanglement manipulation, and other information-processing tasks. The student will combine mathematical analysis with numerical exploration to discover these limits and identify states and channels that reach them. A central goal is to uncover principles that connect a single use of a quantum resource to the collective power of many copies. Along the way, the student will learn tools from quantum information and quantum resource theories while investigating the boundary between what quantum physics permits and what it forbids.",
+    imageUrl: "/project-gour-quantum-info.jpg",
+    createdAt: "2026-11-10T17:41:00.148Z",
+    updatedAt: 1794332460148,
+    status: "approved",
+  },
+  {
+    id: "pending-mwazrlsd-91j0",
+    title: "Photon correlations in superfluorescence",
+    supervisor: "Ron Tenne - ron.tenne@technion.ac.il",
+    description:
+      "The terms nano, quantum and fast (or ultrafast), which we use so often in chemistry and physics, are inherently linked together. Our lab creates unique tools to observe these links in vivid detail. We study nano-sized emitters of quantum states of light –states that cannot be described simply by Maxwell’s equations. To understand their physics, we need to study one nano particle at a time and at very fast rates. Combining “fast” and “small” is very challenging and takes up much of our working time. \nOne of our strategies to accomplish this is to excite nanoparticles with an electron microscope and measure their emission with single photon avalanche detector (SPAD) arrays. The electron microscope meets the condition of observing “small” dimensions, exciting a material within a ~10 nm spot. SPAD arrays allows us to observe the emission of photons with high temporal resolution. In this project our goal is to measure, analyze and understand correlation in the resulting emission. Technically we answer questions such as: “if three photons were already detected what is the probability to also see fourth one”. This new information, never measured before, will serve multiple purposes. We can use it as a contrast to form an image, to understand the dynamics of electrons in the electron source or learn about the transport of electrons within a sample.\nOur lab opened its doors just two years ago, and you will be able to join in and experience experimental optics/materials science at the ground-floor level. We have multiple long-term experiments in which we can establish a short-term project that will keep you challenged throughout your time in the Technion.",
+    linkUrl: "https://funspeclab.twix.technion.ac.il/",
+    imageUrl: "/project-tenne-superfluorescence.jpg",
+    createdAt: "2026-11-10T17:56:21.133Z",
+    updatedAt: 1794333451554,
+    status: "approved",
   },
 ];
 
-const STORAGE_KEY = "quantum_center_projects_v6";
-const PENDING_STORAGE_KEY = "quantum_center_pending_projects_v6";
-const DELETED_IDS_KEY = "quantum_center_deleted_ids_v6";
-const REJECTED_IDS_KEY = "quantum_center_rejected_ids_v6";
+export const INITIAL_PENDING_PROJECTS: Project[] = [];
+
+const STORAGE_KEY = "quantum_center_projects_v7";
+const PENDING_STORAGE_KEY = "quantum_center_pending_projects_v7";
+const DELETED_IDS_KEY = "quantum_center_deleted_ids_v7";
+const REJECTED_IDS_KEY = "quantum_center_rejected_ids_v7";
 const CHANNEL_NAME = "quantum_projects_sync";
 
 let inFlightMutations = 0;
@@ -170,7 +207,7 @@ export async function compressImageFile(file: File): Promise<string> {
       img.onerror = () => resolve(dataUrl);
       img.onload = () => {
         try {
-          const maxDim = 1280;
+          const maxDim = 960;
           let { width, height } = img;
           if (width > maxDim || height > maxDim) {
             if (width > height) {
@@ -189,11 +226,10 @@ export async function compressImageFile(file: File): Promise<string> {
             resolve(dataUrl);
             return;
           }
-          // Fill white background for transparent images converted to JPEG so plots look clean
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL("image/jpeg", 0.84);
+          const compressed = canvas.toDataURL("image/jpeg", 0.78);
           resolve(compressed);
         } catch {
           resolve(dataUrl);
@@ -319,45 +355,23 @@ function notifyLocalListeners(projects: Project[], pendingProjects: Project[]): 
   }
 }
 
-function mergeProjectLists(
-  serverList: Project[],
-  localList: Project[],
-  excludeIds: Set<string>
-): Project[] {
-  const map = new Map<string, Project>();
-  for (const item of serverList) {
-    if (item && item.id && !excludeIds.has(item.id)) {
-      map.set(item.id, item);
-    }
-  }
-  for (const localItem of localList) {
-    if (!localItem || !localItem.id || excludeIds.has(localItem.id)) continue;
-    const existing = map.get(localItem.id);
-    if (!existing) {
-      map.set(localItem.id, localItem);
-    } else if ((localItem.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
-      map.set(localItem.id, localItem);
-    }
-  }
-  return Array.from(map.values());
-}
-
-export async function fetchServerState(): Promise<{
+export async function fetchServerState(forceFresh = false): Promise<{
   projects: Project[];
   pendingProjects: Project[];
 } | null> {
   if (typeof window === "undefined") return null;
-  // Do not overwrite optimistic state while a mutation is actively in flight
-  if (inFlightMutations > 0 || Date.now() - lastMutationTimeMs < 1200) {
+  // Do not overwrite optimistic UI while a local mutation is actively in flight
+  if (inFlightMutations > 0 || Date.now() - lastMutationTimeMs < 1500) {
     return {
       projects: getProjects(),
       pendingProjects: getPendingProjects(),
     };
   }
   try {
-    const res = await fetch(`/api/projects?t=${Date.now()}`, { cache: "no-store" });
+    const url = `/api/projects?t=${Date.now()}${forceFresh ? "&fresh=1" : ""}`;
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return null;
-    if (inFlightMutations > 0 || Date.now() - lastMutationTimeMs < 1200) {
+    if (inFlightMutations > 0 || Date.now() - lastMutationTimeMs < 1500) {
       return {
         projects: getProjects(),
         pendingProjects: getPendingProjects(),
@@ -367,75 +381,69 @@ export async function fetchServerState(): Promise<{
     const serverDeleted = Array.isArray(data.deletedIds) ? data.deletedIds : [];
     const serverRejected = Array.isArray(data.rejectedIds) ? data.rejectedIds : [];
 
-    const mergedDeleted = Array.from(new Set([...getDeletedIds(), ...serverDeleted]));
-    const mergedRejected = Array.from(new Set([...getRejectedIds(), ...serverRejected]));
-    setDeletedIds(mergedDeleted);
-    setRejectedIds(mergedRejected);
+    setDeletedIds(serverDeleted);
+    setRejectedIds(serverRejected);
 
-    const deletedSet = new Set(mergedDeleted);
     const serverProjects = Array.isArray(data.projects) ? data.projects : INITIAL_PROJECTS;
-    const localProjects = getProjects();
-    const finalProjects = mergeProjectLists(serverProjects, localProjects, deletedSet);
-
-    const approvedIds = new Set(finalProjects.map((p) => p.id));
-    const pendingExcludeSet = new Set([...mergedRejected, ...mergedDeleted, ...approvedIds]);
-
     const serverPending = Array.isArray(data.pendingProjects)
       ? data.pendingProjects
       : INITIAL_PENDING_PROJECTS;
-    const localPending = getPendingProjects();
-    const finalPending = mergeProjectLists(serverPending, localPending, pendingExcludeSet);
 
-    // If local state had projects that the server didn't know about yet, push them to server
-    const serverProjIds = new Set(serverProjects.map((p) => p.id));
-    const serverPendIds = new Set(serverPending.map((p) => p.id));
-    const hasUnsyncedLocal =
-      finalProjects.some((p) => !serverProjIds.has(p.id)) ||
-      finalPending.some((p) => !serverPendIds.has(p.id));
-
-    notifyLocalListeners(finalProjects, finalPending);
-
-    if (hasUnsyncedLocal) {
-      void sendAtomicMutation({
-        action: "sync_merge",
-        projects: finalProjects,
-        pendingProjects: finalPending,
-        deletedIds: mergedDeleted,
-        rejectedIds: mergedRejected,
-      });
-    }
-
-    return { projects: finalProjects, pendingProjects: finalPending };
+    notifyLocalListeners(serverProjects, serverPending);
+    return { projects: serverProjects, pendingProjects: serverPending };
   } catch {
     return null;
   }
 }
 
 export async function fetchServerProjects(): Promise<Project[] | null> {
-  const state = await fetchServerState();
+  const state = await fetchServerState(false);
   return state ? state.projects : null;
 }
 
-async function sendAtomicMutation(payload: Record<string, unknown>): Promise<void> {
-  if (typeof window === "undefined") return;
+async function pingLiveNotify(action: string, id?: string): Promise<void> {
+  try {
+    await fetch(LIVE_NOTIFY_POST_URL, {
+      method: "POST",
+      body: JSON.stringify({ action, id, t: Date.now() }),
+    });
+  } catch {
+    // ignore push ping errors
+  }
+}
+
+async function sendAtomicMutation(payload: Record<string, unknown>): Promise<boolean> {
+  if (typeof window === "undefined") return false;
   inFlightMutations++;
   lastMutationTimeMs = Date.now();
+  let success = false;
   try {
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as Partial<StoredState>;
-      if (Array.isArray(data.deletedIds)) setDeletedIds(data.deletedIds);
-      if (Array.isArray(data.rejectedIds)) setRejectedIds(data.rejectedIds);
-      if (Array.isArray(data.projects) && Array.isArray(data.pendingProjects)) {
-        notifyLocalListeners(data.projects, data.pendingProjects);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as Partial<StoredState>;
+          if (Array.isArray(data.deletedIds)) setDeletedIds(data.deletedIds);
+          if (Array.isArray(data.rejectedIds)) setRejectedIds(data.rejectedIds);
+          if (Array.isArray(data.projects) && Array.isArray(data.pendingProjects)) {
+            notifyLocalListeners(data.projects, data.pendingProjects);
+          }
+          success = true;
+          break;
+        }
+      } catch (err) {
+        console.error(`Mutation attempt ${attempt + 1} failed:`, err);
+      }
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
       }
     }
-  } catch (err) {
-    console.error("Failed to sync mutation to server:", err);
+    void pingLiveNotify(String(payload.action || "update"));
+    return success;
   } finally {
     inFlightMutations = Math.max(0, inFlightMutations - 1);
     lastMutationTimeMs = Date.now();
@@ -483,6 +491,25 @@ export function addProject(newProj: Omit<Project, "id" | "createdAt">): Project 
   notifyLocalListeners(updated, getPendingProjects());
   void sendAtomicMutation({ action: "add_project", project: created });
   return created;
+}
+
+export async function submitPendingProjectAsync(
+  newProj: Omit<Project, "id" | "createdAt" | "status">
+): Promise<{ project: Project; synced: boolean }> {
+  const currentPending = getPendingProjects();
+  const now = Date.now();
+  const created: Project = {
+    ...newProj,
+    linkUrl: normalizeExternalUrl(newProj.linkUrl),
+    id: "pending-" + now.toString(36) + "-" + Math.random().toString(36).slice(2, 6),
+    createdAt: new Date(now).toISOString(),
+    updatedAt: now,
+    status: "pending",
+  };
+  const updatedPending = [created, ...currentPending];
+  notifyLocalListeners(getProjects(), updatedPending);
+  const synced = await sendAtomicMutation({ action: "submit_pending", project: created });
+  return { project: created, synced };
 }
 
 export function submitPendingProject(
